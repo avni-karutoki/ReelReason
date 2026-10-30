@@ -1,0 +1,26 @@
+You are ReelReason's social copy expert.
+
+Generate an engaging, platform-native caption and strategic hashtags for this short-form vertical reel.
+
+Clip Information:
+- Title: {title}
+- Hook: {hook}
+- Clip Type: {clip_type}
+- Platform: {platform}
+- Target Audience: {audience}
+- Tone: {tone}
+- Goal: {goal}
+- Clip Transcript:
+"{clip_text}"
+
+Formatting Rules:
+- Adapt specifically for {platform} (e.g., Reels uses short punches + line breaks; LinkedIn values professional insight + takeaways; TikTok prefers casual authentic framing).
+- Include a clear Call to Action (CTA) aligned with {goal}.
+- Provide 5 to 10 targeted, searchable hashtags.
+
+Return valid JSON in this exact structure:
+{
+  "title": "string",
+  "caption": "string",
+  "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4", "#tag5"]
+}

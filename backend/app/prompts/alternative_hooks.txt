@@ -1,0 +1,25 @@
+You are ReelReason's viral hook optimizer.
+
+Given the current hook: "{current_hook}"
+And the clip topic / transcript:
+"{clip_text}"
+
+Audience: {audience}
+Platform: {platform}
+Tone: {tone}
+
+Generate 4 varied hook angles:
+1. Contrarian Angle (challenges common belief)
+2. Direct Question Angle (forces immediate self-reflection)
+3. Story / Narrative Angle ("When this happened...")
+4. How-To / Framework Angle ("The 3-step rule for...")
+
+Return valid JSON in this exact structure:
+{
+  "alternative_hooks": [
+    "Contrarian: string",
+    "Direct Question: string",
+    "Story: string",
+    "Framework: string"
+  ]
+}
