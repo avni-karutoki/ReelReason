@@ -22,6 +22,8 @@ import {
   Linkedin
 } from 'lucide-react';
 import { useProjects } from '../context/ProjectContext';
+import { isBackendAvailable, createProject as registerProjectWithBackend } from '../api/client';
+import { ensureBackendProbed, registerRealProject } from '../api/realMode';
 import { VideoType, TargetPlatform, ClipCategory } from '../types';
 import { HERO_PODCAST_IMG, THUMB_KEYNOTE_IMG, THUMB_TUTORIAL_IMG } from '../data/mockData';
 import { toast } from 'sonner';
@@ -147,7 +149,7 @@ export const UploadPage: React.FC = () => {
     toast.info(`Loaded ${preset} studio preset`);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!selectedFile && !youtubeUrl.trim() && !projectTitle.trim()) {
@@ -178,8 +180,35 @@ export const UploadPage: React.FC = () => {
       language
     }, selectedFile);
 
-    // Navigate to processing pipeline
+    // Navigate immediately — the processing page reconciles with the backend while it runs
     navigate(`/project/${newProjectId}/processing`);
+
+    // Full pipeline submission against the FastAPI backend when reachable
+    const backendUp = await ensureBackendProbed(isBackendAvailable);
+    if (backendUp) {
+      const platformLabel = platform === 'reels' ? 'Instagram Reels'
+        : platform === 'shorts' ? 'YouTube Shorts'
+        : platform === 'facebook_reels' ? 'Facebook Reels'
+        : 'LinkedIn';
+      try {
+        const backendProject = await registerProjectWithBackend({
+          file: selectedFile,
+          youtubeUrl: youtubeUrl.trim() || null,
+          title,
+          platform: platformLabel,
+          audience: targetAudience || 'Creators',
+          goal: primaryGoal || 'Views',
+          tone: tone || 'Bold',
+          numberOfClips: numClips,
+          language: language || 'English',
+        });
+        registerRealProject(newProjectId, backendProject.id);
+        toast.success('Project submitted to the processing pipeline');
+      } catch (err) {
+        console.warn('Backend submission failed — running local analysis:', (err as Error)?.message || err);
+        toast.warning('Backend unreachable — continuing with local preview');
+      }
+    }
   };
 
   const availableClipCategories: ClipCategory[] = [

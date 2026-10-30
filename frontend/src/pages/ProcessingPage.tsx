@@ -12,9 +12,14 @@ import {
   Zap,
   Info,
   Layers,
-  Cpu
+  Cpu,
+  Cloud
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useProjects } from '../context/ProjectContext';
+import { isBackendAvailable, projectStatus, listProjectClips } from '../api/client';
+import { ensureBackendProbed, getBackendProjectId } from '../api/realMode';
+import { backendStatusToStepIndex, backendClipToFrontend } from '../api/adapters';
 
 const PROCESSING_STEPS = [
   { id: 1, label: 'Decoding Video Stream', detail: 'Parsing audio tracks and verifying codec keyframes' },
@@ -40,10 +45,104 @@ export const ProcessingPage: React.FC = () => {
   const [isError, setIsError] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isFastForward, setIsFastForward] = useState(false);
+  const [realBackendId, setRealBackendId] = useState<string | null>(null);
 
+  // Detect whether this project is mirrored on the FastAPI backend
+  // (upload flow registers the mapping asynchronously, so poll the registry briefly)
+  useEffect(() => {
+    if (!project) return;
+    let cancelled = false;
+
+    const existing = getBackendProjectId(project.id);
+    if (existing) {
+      setRealBackendId(existing);
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      const backendId = getBackendProjectId(project.id);
+      if (backendId && !cancelled) {
+        clearInterval(interval);
+        setRealBackendId(backendId);
+        return;
+      }
+      const up = await ensureBackendProbed(isBackendAvailable);
+      if (!up && !cancelled) clearInterval(interval); // pure local mode — simulation runs
+    }, 1200);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [project?.id]);
+
+  // Real pipeline polling: FastAPI drives progress, steps, and ETA
+  useEffect(() => {
+    if (!project || !realBackendId || isError || isPaused) return;
+    let cancelled = false;
+
+    const finalize = async () => {
+      // Pull real generated clips into the local mirror so dashboard /
+      // editor / export pages work against backend data
+      try {
+        const backendClips = await listProjectClips(realBackendId, { sortBy: 'score' });
+        const projectTitle = project.title || 'Studio Video';
+        const mappedClips = backendClips.map(c => backendClipToFrontend(c, projectTitle));
+        if (mappedClips.length > 0) {
+          updateProject(project.id, { status: 'completed', clips: mappedClips });
+        } else {
+          updateProject(project.id, { status: 'completed' });
+        }
+      } catch (e) {
+        console.warn('Failed to load generated clips:', (e as Error)?.message || e);
+        updateProject(project.id, { status: 'completed' });
+      }
+      if (!cancelled) toast.success('Analysis complete — reels ready');
+      navigate(`/project/${project.id}/clips`);
+    };
+
+    const poll = async () => {
+      try {
+        const status = await projectStatus(realBackendId);
+        if (cancelled) return;
+        setProgress(status.progress_percentage);
+        setCurrentStepIndex(Math.max(0, Math.min(7, backendStatusToStepIndex(status))));
+        if (status.estimated_time_remaining_seconds !== null) {
+          setRemainingSeconds(status.estimated_time_remaining_seconds);
+        }
+        if (status.status === 'completed') {
+          clearInterval(timer);
+          await finalize();
+        } else if (status.status === 'failed') {
+          clearInterval(timer);
+          if (!cancelled) {
+            setIsError(true);
+            console.error('Pipeline failed:', status.error_message);
+            toast.error(`Pipeline failed: ${status.error_message || 'unknown error'}`);
+          }
+        }
+      } catch (e) {
+        // Backend unreachable mid-run — gracefully continue with local simulation
+        if (!cancelled) {
+          setRealBackendId(null);
+          toast.info('Backend connection lost — continuing local preview');
+        }
+      }
+    };
+
+    poll();
+    const timer = setInterval(poll, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [project, realBackendId, isError, isPaused, navigate, updateProject]);
+
+  // Local simulated pipeline (demo mode / offline fallback)
   useEffect(() => {
     if (!project) return;
     if (isError || isPaused) return;
+    if (realBackendId) return; // real pipeline drives progress instead
 
     const intervalSpeed = isFastForward ? 200 : 1000;
 
@@ -75,7 +174,7 @@ export const ProcessingPage: React.FC = () => {
     }, intervalSpeed);
 
     return () => clearInterval(interval);
-  }, [project, isError, isPaused, isFastForward, navigate, updateProject]);
+  }, [project, isError, isPaused, isFastForward, realBackendId, navigate, updateProject]);
 
   if (!project) {
     return (
@@ -120,16 +219,26 @@ export const ProcessingPage: React.FC = () => {
         </p>
       </div>
 
-      {/* Demo Simulation Notice Banner */}
+      {/* Pipeline Mode Notice Banner */}
       <div className="p-3.5 rounded-xl bg-surface-sub/60 border border-subtle flex items-center justify-between text-xs text-sub">
         <div className="flex items-center gap-2">
-          <Cpu className="w-4 h-4 text-cyan-400 shrink-0" />
-          <span>Simulating local inference pipeline — word-level attention heuristics</span>
+          {realBackendId ? (
+            <>
+              <Cloud className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span><span className="text-emerald-400 font-bold">Live API mode</span> — structured pipeline runs on the backend engine</span>
+            </>
+          ) : (
+            <>
+              <Cpu className="w-4 h-4 text-cyan-400 shrink-0" />
+              <span>Simulating local inference pipeline — word-level attention heuristics</span>
+            </>
+          )}
         </div>
         <button
           type="button"
           onClick={() => setIsFastForward(!isFastForward)}
-          className={`px-3 py-1 rounded-lg text-xs font-semibold border flex items-center gap-1.5 transition-all ${
+          disabled={Boolean(realBackendId)}
+          className={`px-3 py-1 rounded-lg text-xs font-semibold border flex items-center gap-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
             isFastForward
               ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white border-transparent shadow-[0_0_15px_rgba(99,102,241,0.5)]'
               : 'bg-surface-main text-sub border-subtle hover:text-main'
@@ -233,7 +342,7 @@ export const ProcessingPage: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
               setProgress(100);
               updateProject(project.id, { status: 'completed' });
               navigate(`/project/${project.id}/clips`);

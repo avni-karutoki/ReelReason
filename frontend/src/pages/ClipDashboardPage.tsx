@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   Sparkles,
@@ -30,14 +30,41 @@ import { formatSecondsToTime } from '../utils/time';
 import { ReasoningDrawer } from '../components/common/ReasoningDrawer';
 import { VideoReelPlayer } from '../components/common/VideoReelPlayer';
 import { StaggerGroup, StaggerItem } from '../components/common/Reveal';
+import { isBackendAvailable, listProjectClips } from '../api/client';
+import { ensureBackendProbed } from '../api/realMode';
+import { backendClipToFrontend } from '../api/adapters';
 import { toast } from 'sonner';
 
 export const ClipDashboardPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { getProject, setClipApproval, simulateClipRender, getVideoBlobUrl } = useProjects();
+  const { getProject, setClipApproval, simulateClipRender, getVideoBlobUrl, updateProject } = useProjects();
 
   const project = getProject(id || '');
+
+  // If this project lives on the backend but clips haven't been mirrored locally
+  // yet (e.g. opened directly from another device), hydrate them from the API.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!project || project.clips.length > 0) return;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(project.id)) return;
+      const up = await ensureBackendProbed(isBackendAvailable);
+      if (!up || cancelled) return;
+      try {
+        const backendClips = await listProjectClips(project.id, { sortBy: 'score' });
+        if (cancelled || backendClips.length === 0) return;
+        const projectTitle = project.title || 'Studio Video';
+        updateProject(project.id, {
+          status: 'completed',
+          clips: backendClips.map(c => backendClipToFrontend(c, projectTitle)),
+        });
+      } catch (e) {
+        console.warn('Could not load clips from backend:', (e as Error)?.message || e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [project?.id, project?.clips.length]);
 
   // Filter & Sort State
   const [selectedCategory, setSelectedCategory] = useState<string>('all');

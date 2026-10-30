@@ -14,13 +14,17 @@ import {
   FolderOpen
 } from 'lucide-react';
 import { useProjects } from '../context/ProjectContext';
+import { isBackendAvailable, listProjects } from '../api/client';
+import { ensureBackendProbed, markRealProjectId } from '../api/realMode';
+import { backendProjectToFrontend } from '../api/adapters';
+import { HERO_PODCAST_IMG } from '../data/mockData';
 import { Project } from '../types';
 import { StaggerGroup, StaggerItem } from '../components/common/Reveal';
 import { toast } from 'sonner';
 
 export const ProjectsPage: React.FC = () => {
   const navigate = useNavigate();
-  const { projects, deleteProject } = useProjects();
+  const { projects, deleteProject, upsertBackendProject } = useProjects();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'processing' | 'draft'>('all');
@@ -32,6 +36,28 @@ export const ProjectsPage: React.FC = () => {
     const timer = setTimeout(() => setIsReady(true), 600);
     return () => clearTimeout(timer);
   }, []);
+
+  // Merge server-backed projects into the library so creations from any
+  // device (or the API itself) show up in the studio workspace
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const up = await ensureBackendProbed(isBackendAvailable);
+      if (!up || cancelled) return;
+      try {
+        const backendProjects = await listProjects();
+        backendProjects.forEach(bp => {
+          const mapped = backendProjectToFrontend(bp, HERO_PODCAST_IMG);
+          mapped.id = bp.id;
+          upsertBackendProject(mapped);
+          markRealProjectId(bp.id);
+        });
+      } catch (e) {
+        console.warn('Could not merge backend projects:', (e as Error)?.message || e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [upsertBackendProject]);
 
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {

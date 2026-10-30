@@ -82,6 +82,8 @@ export interface Clip {
   renderProgress: number; // 0-100
   styleConfig: ClipStyleConfig;
   transcriptSegments: TranscriptSegment[];
+  /** Final 9:16 MP4 produced by the rendering pipeline (when available) */
+  renderedVideoUrl?: string;
 }
 
 export interface Project {

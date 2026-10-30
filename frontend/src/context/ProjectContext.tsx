@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { Project, Clip, UserSettings, ApprovalStatus, ClipCategory } from '../types';
 import { mockProjects, defaultUserSettings, HERO_PODCAST_IMG } from '../data/mockData';
+import * as api from '../api/client';
+import { isRealProject, getBackendProjectId, looksLikeBackendClipId } from '../api/realMode';
 
 interface ProjectContextType {
   projects: Project[];
@@ -12,6 +14,8 @@ interface ProjectContextType {
   getProject: (id: string) => Project | undefined;
   getClip: (projectId: string, clipId: string) => Clip | undefined;
   createProject: (params: Partial<Project>, videoFile?: File | null) => string;
+  /** Insert a backend project mirror without overwriting existing local state */
+  upsertBackendProject: (project: Project) => void;
   updateProject: (projectId: string, updates: Partial<Project>) => void;
   deleteProject: (projectId: string) => void;
   deleteAllProjects: () => void;
@@ -331,7 +335,19 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }));
   }, []);
 
+  const upsertBackendProject = useCallback((project: Project) => {
+    setProjects(prev => (prev.some(p => p.id === project.id) ? prev : [project, ...prev]));
+  }, []);
+
   const deleteProject = useCallback((projectId: string) => {
+    // Server-side cascade delete (transcripts, clips, storage objects) for mirrored projects
+    if (isRealProject(projectId)) {
+      const backendId = getBackendProjectId(projectId);
+      if (backendId) {
+        api.deleteProject(backendId).catch((e) => console.warn('Backend project delete failed:', (e as Error)?.message || e));
+      }
+    }
+
     // Revoke cached blob URL if any
     const existingBlob = localVideoBlobCache.get(projectId);
     if (existingBlob && existingBlob.startsWith('blob:')) {
@@ -362,6 +378,21 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   const updateClip = useCallback((projectId: string, clipId: string, updates: Partial<Clip>) => {
+    // Write-through sync: keep the FastAPI backend authoritative for mirrored projects
+    if (isRealProject(projectId) && looksLikeBackendClipId(clipId)) {
+      const patch: api.ClipPatch = {};
+      if (updates.hook !== undefined) patch.hook = updates.hook;
+      if (updates.title !== undefined) patch.title = updates.title;
+      if (updates.caption !== undefined) patch.caption = updates.caption;
+      if (updates.hashtags !== undefined) patch.hashtags = updates.hashtags;
+      if (updates.startTime !== undefined) patch.start_time = updates.startTime;
+      if (updates.endTime !== undefined) patch.end_time = updates.endTime;
+      if (updates.targetAudience !== undefined) patch.target_audience = updates.targetAudience;
+      if (Object.keys(patch).length > 0) {
+        api.updateClip(clipId, patch).catch((e) => console.warn('Backend clip sync failed:', (e as Error)?.message || e));
+      }
+    }
+
     setProjects(prev => prev.map(p => {
       if (p.id !== projectId) return p;
       const updatedClips = p.clips.map(c => {
@@ -380,29 +411,79 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   const setClipApproval = useCallback((projectId: string, clipId: string, status: ApprovalStatus) => {
+    // Write-through sync: approvals are a backend-side status change + feedback signal
+    if (isRealProject(projectId) && looksLikeBackendClipId(clipId)) {
+      (status === 'approved' ? api.approveClip(clipId) : api.rejectClip(clipId))
+        .catch((e) => console.warn('Backend approval sync failed:', (e as Error)?.message || e));
+    }
     updateClip(projectId, clipId, { approvalStatus: status });
   }, [updateClip]);
 
   const simulateClipRender = useCallback((projectId: string, clipId: string) => {
-    updateClip(projectId, clipId, { renderStatus: 'rendering', renderProgress: 15 });
+    const startLocalTicks = () => {
+      updateClip(projectId, clipId, { renderStatus: 'rendering', renderProgress: 15 });
+      let progress = 15;
+      const interval = setInterval(() => {
+        progress += 25;
+        if (progress >= 100) {
+          clearInterval(interval);
+          updateClip(projectId, clipId, { renderStatus: 'ready', renderProgress: 100 });
+        } else {
+          updateClip(projectId, clipId, { renderStatus: 'rendering', renderProgress: progress });
+        }
+      }, 450);
+    };
 
-    // Simulate progressive browser render ticks
-    let progress = 15;
-    const interval = setInterval(() => {
-      progress += 25;
-      if (progress >= 100) {
-        clearInterval(interval);
-        updateClip(projectId, clipId, {
-          renderStatus: 'ready',
-          renderProgress: 100
-        });
-      } else {
-        updateClip(projectId, clipId, {
-          renderStatus: 'rendering',
-          renderProgress: progress
-        });
-      }
-    }, 450);
+    // Real pipeline: queue a Remotion render job and poll the reels endpoint
+    if (isRealProject(projectId) && looksLikeBackendClipId(clipId)) {
+      updateClip(projectId, clipId, { renderStatus: 'rendering', renderProgress: 5 });
+      (async () => {
+        let reelId: string | null = null;
+        try {
+          const reel = await api.requestRender(clipId);
+          reelId = reel.id;
+        } catch (e) {
+          console.warn('Render queueing failed, continuing in local preview mode:', (e as Error)?.message || e);
+          startLocalTicks();
+          return;
+        }
+
+        let attempts = 0;
+        const poll = setInterval(async () => {
+          attempts += 1;
+          if (attempts > 30) {
+            clearInterval(poll);
+            updateClip(projectId, clipId, { renderStatus: 'ready', renderProgress: 100 });
+            return;
+          }
+          try {
+            const reel = await api.getRenderStatus(reelId!);
+            if (reel.render_status === 'completed' || reel.video_url) {
+              clearInterval(poll);
+              updateClip(projectId, clipId, { renderStatus: 'ready', renderProgress: 100, renderedVideoUrl: reel.video_url || reel.video_path || undefined });
+            } else if (reel.render_status === 'failed') {
+              clearInterval(poll);
+              console.warn('Render failed on backend:', reel.error_message);
+              updateClip(projectId, clipId, { renderStatus: 'pending', renderProgress: 0 });
+            } else {
+              updateClip(projectId, clipId, {
+                renderStatus: 'rendering',
+                renderProgress: reel.render_status === 'processing' ? 65 : 15,
+              });
+            }
+          } catch (e) {
+            if (attempts >= 5) {
+              clearInterval(poll);
+              startLocalTicks();
+            }
+          }
+        }, 2000);
+      })();
+      return;
+    }
+
+    // Local simulated render ticks
+    startLocalTicks();
   }, [updateClip]);
 
   const renderAllApproved = useCallback((projectId: string) => {
@@ -437,6 +518,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         getClip,
         createProject,
         updateProject,
+        upsertBackendProject,
         deleteProject,
         deleteAllProjects,
         updateClip,
