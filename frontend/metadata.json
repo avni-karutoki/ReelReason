@@ -1,0 +1,6 @@
+{
+  "name": "ReelReason - Purposeful Video Repurposing Studio",
+  "description": "Transform long videos into purposeful, engaging vertical reels with explainable AI moment selection, hooks, and captions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
