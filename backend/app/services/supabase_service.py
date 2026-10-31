@@ -178,7 +178,10 @@ class SupabaseService:
                 "message": message,
                 "metadata": metadata or {},
             }
-            return self.service_client.table("job_logs").insert(record).execute()
+            import asyncio
+            return await asyncio.to_thread(
+                lambda: self.service_client.table("job_logs").insert(record).execute()
+            )
         except Exception as e:
             logger.error(f"Failed to write job log: {e}")
 

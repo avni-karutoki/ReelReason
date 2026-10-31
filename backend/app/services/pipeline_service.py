@@ -30,6 +30,15 @@ from app.utils.time_utils import parse_timestamp_to_seconds, calculate_duration_
 logger = logging.getLogger("reelreason.pipeline")
 
 
+async def _offload(fn, *args, **kwargs):
+    """
+    Runs blocking I/O (supabase-py executes, ffmpeg subprocesses, storage uploads)
+    in a worker thread so the FastAPI event loop stays responsive. Without this,
+    a single 200 MB storage upload would freeze every HTTP endpoint for minutes.
+    """
+    return await asyncio.to_thread(lambda: fn(*args, **kwargs))
+
+
 class PipelineService:
     async def run_pipeline(self, project_id: str, user_id: str) -> Dict[str, Any]:
         """
@@ -39,7 +48,7 @@ class PipelineService:
         logger.info(f"Starting ReelReason pipeline for project {project_id}")
 
         # Fetch project details
-        res = supabase_service.service_client.table("video_projects").select("*").eq("id", project_id).execute()
+        res = await _offload(lambda: supabase_service.service_client.table("video_projects").select("*").eq("id", project_id).execute())
         if not res.data:
             raise ValueError(f"Project not found: {project_id}")
 
@@ -53,13 +62,14 @@ class PipelineService:
 
             if source_type == "youtube" and source_url:
                 await self._update_status(project_id, "extracting_audio", "Downloading YouTube video via yt-dlp")
-                yt_info = ffmpeg_service.download_youtube_video(source_url)
+                yt_info = await _offload(ffmpeg_service.download_youtube_video, source_url)
                 local_video_path = yt_info["video_path"]
                 duration = yt_info.get("duration_seconds", 300)
-                
+
                 # Upload to Supabase Storage if local
                 if os.path.exists(local_video_path):
-                    storage_url = storage_service.upload_file(
+                    storage_url = await _offload(
+                        storage_service.upload_file,
                         bucket_name=settings.SUPABASE_VIDEO_BUCKET,
                         destination_path=f"{user_id}/{project_id}.mp4",
                         local_file_path=local_video_path,
@@ -69,22 +79,23 @@ class PipelineService:
                     storage_url = f"{settings.SUPABASE_URL}/storage/v1/object/public/{settings.SUPABASE_VIDEO_BUCKET}/{project_id}.mp4"
 
                 # Update project with video_path and duration
-                supabase_service.service_client.table("video_projects").update({
+                await _offload(lambda: supabase_service.service_client.table("video_projects").update({
                     "video_path": storage_url,
                     "duration_seconds": duration,
                     "title": project.get("title") or yt_info.get("title")
-                }).eq("id", project_id).execute()
+                }).eq("id", project_id).execute())
 
             # Step 4-6: Extract audio using FFmpeg
             await self._update_status(project_id, "extracting_audio", "Extracting high-fidelity speech audio track via FFmpeg")
             audio_filename = f"{project_id}_audio.mp3"
             local_audio_path = os.path.join(settings.TEMP_DIR, audio_filename)
-            
-            ffmpeg_service.extract_audio(local_video_path or "mock_video.mp4", local_audio_path)
-            
+
+            await _offload(ffmpeg_service.extract_audio, local_video_path or "mock_video.mp4", local_audio_path)
+
             # Upload extracted audio to storage
             if os.path.exists(local_audio_path):
-                audio_storage_url = storage_service.upload_file(
+                audio_storage_url = await _offload(
+                    storage_service.upload_file,
                     bucket_name=settings.SUPABASE_AUDIO_BUCKET,
                     destination_path=f"{user_id}/{audio_filename}",
                     local_file_path=local_audio_path,
@@ -93,9 +104,9 @@ class PipelineService:
             else:
                 audio_storage_url = f"{settings.SUPABASE_URL}/storage/v1/object/public/{settings.SUPABASE_AUDIO_BUCKET}/{audio_filename}"
 
-            supabase_service.service_client.table("video_projects").update({
+            await _offload(lambda: supabase_service.service_client.table("video_projects").update({
                 "audio_path": audio_storage_url
-            }).eq("id", project_id).execute()
+            }).eq("id", project_id).execute())
 
             # Step 7-9: Transcription with word timestamps
             await self._update_status(project_id, "transcribing", "Transcribing speech and extracting word-level timestamps")
@@ -116,12 +127,13 @@ class PipelineService:
                 "word_timestamps": transcript_result.get("word_timestamps", []),
                 "segment_timestamps": transcript_result.get("segment_timestamps", []),
             }
-            supabase_service.service_client.table("transcripts").insert(transcript_payload).execute()
+            await _offload(lambda: supabase_service.service_client.table("transcripts").insert(transcript_payload).execute())
 
             # Step 10-12: Semantic transcript segmentation
             await self._update_status(project_id, "analyzing", "Cleaning filler words and segmenting into semantic blocks")
             raw_segments = transcript_result.get("segment_timestamps", [])
-            semantic_segments = transcript_processing_service.process_raw_transcript(
+            semantic_segments = await _offload(
+                transcript_processing_service.process_raw_transcript,
                 raw_segments=raw_segments,
                 project_id=project_id,
                 transcript_id=transcript_record_id,
@@ -132,7 +144,7 @@ class PipelineService:
             # Insert semantic segments into public.transcript_segments
             saved_segments = []
             for seg in semantic_segments:
-                seg_res = supabase_service.service_client.table("transcript_segments").insert(seg).execute()
+                seg_res = await _offload(lambda s=seg: supabase_service.service_client.table("transcript_segments").insert(s).execute())
                 if seg_res.data:
                     saved_segments.append(seg_res.data[0])
                 else:
@@ -214,7 +226,7 @@ class PipelineService:
                     "status": "suggested",
                     "posting_order": int(c.get("posting_order", 1))
                 }
-                supabase_service.service_client.table("clip_suggestions").insert(clip_row).execute()
+                await _offload(lambda r=clip_row: supabase_service.service_client.table("clip_suggestions").insert(r).execute())
                 clip_db_records.append(clip_row)
 
             # Step 20-21: Prepare renderer metadata readiness
@@ -251,10 +263,10 @@ class PipelineService:
 
     async def _update_status(self, project_id: str, status: str, message: str):
         logger.info(f"Project {project_id} -> {status}: {message}")
-        supabase_service.service_client.table("video_projects").update({
+        await _offload(lambda: supabase_service.service_client.table("video_projects").update({
             "status": status,
             "error_message": message if status == "failed" else None
-        }).eq("id", project_id).execute()
+        }).eq("id", project_id).execute())
 
         await supabase_service.create_job_log(
             project_id=project_id,
