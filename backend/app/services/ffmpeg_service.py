@@ -51,7 +51,7 @@ class FFmpegService:
         try:
             import yt_dlp
             ydl_opts = {
-                "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "format": "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best",
                 "outtmpl": output_template,
                 "quiet": True,
                 "no_warnings": True,
@@ -86,7 +86,7 @@ class FFmpegService:
         cmd = [
             sys.executable,
             "-m", "yt_dlp",
-            "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "-f", "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best",
             "--no-playlist",
             "-o", output_template,
             youtube_url
