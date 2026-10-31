@@ -37,10 +37,11 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = Field(default=None)
     AI_MODEL_NAME: str = Field(default="gemini-3.8-flash")
 
-    # Transcription Settings (options: 'mock', 'openai', 'assemblyai')
+    # Transcription Settings (options: 'mock', 'gemini', 'openai', 'assemblyai')
     TRANSCRIPTION_PROVIDER: str = Field(default="mock")
     OPENAI_WHISPER_MODEL: str = Field(default="whisper-1")
     ASSEMBLYAI_API_KEY: Optional[str] = Field(default=None)
+    GEMINI_TRANSCRIBE_MODEL: str = Field(default="gemini-3.5-transcribe")
 
     # Remotion Renderer Service
     RENDERER_BASE_URL: str = Field(default="http://localhost:3000")

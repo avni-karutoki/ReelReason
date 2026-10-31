@@ -1,9 +1,11 @@
 """
 Speech-to-Text Transcription Service with Provider Abstraction.
-Supports OpenAI Whisper API, AssemblyAI, and Demo/Mock transcription with word-level timestamps.
+Supports Google Gemini (gemini transcribe models), OpenAI Whisper API, AssemblyAI,
+and Demo/Mock transcription with word-level timestamps.
 """
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
+import base64
 import os
 import json
 import logging
@@ -194,10 +196,171 @@ class MockTranscriptionProvider(TranscriptionProvider):
         }
 
 
+class GeminiTranscriptionProvider(TranscriptionProvider):
+    """
+    Speech-to-text through Google's dedicated transcribe model (default
+    gemini-3.5-transcribe) via the Interactions API in verbatim mode — the only
+    Gemini surface that returns word-level time alignments (word_info
+    annotations with second-based string offsets like "0.400s").
+
+    Audio stays fully inline as base64; files above the 20 MB inline cap are
+    rejected with guidance rather than silently malformed.
+    """
+
+    ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions"
+    INLINE_AUDIO_LIMIT_BYTES = 20 * 1024 * 1024
+    _MIME_BY_EXT = {
+        ".mp3": "audio/mp3",
+        ".wav": "audio/wav",
+        ".m4a": "audio/mp4",
+        ".aac": "audio/mp4",
+        ".ogg": "audio/ogg",
+        ".opus": "audio/opus",
+        ".flac": "audio/flac",
+        ".webm": "audio/webm",
+    }
+
+    async def transcribe(self, audio_file_path: str, language: str = "English") -> Dict[str, Any]:
+        logger.info(f"GeminiTranscriptionProvider transcribing: {audio_file_path}")
+        if not settings.GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY is not configured")
+
+        model = settings.GEMINI_TRANSCRIBE_MODEL or "gemini-3.5-transcribe"
+        audio_part = self._build_audio_part(audio_file_path)
+
+        payload = {
+            "model": model,
+            "input": [{
+                "type": "user_input",
+                "content": [audio_part],
+            }],
+            "generation_config": {
+                "transcription_config": {
+                    "mode": {
+                        "type": "verbatim",
+                        "timestamp_granularities": ["word", "utterance"],
+                    }
+                }
+            },
+        }
+        headers = {"x-goog-api-key": settings.GEMINI_API_KEY}
+
+        async with httpx.AsyncClient(timeout=600.0) as client:
+            resp = await client.post(self.ENDPOINT, headers=headers, json=payload)
+            if resp.status_code != 200:
+                raise RuntimeError(f"Gemini transcription API error: {resp.text}")
+            data = resp.json()
+
+        text, annotations = self._extract_output(data)
+
+        words: List[Dict[str, Any]] = []
+        for a in annotations:
+            if a.get("type") != "word_info":
+                continue
+            start = self._parse_offset(a.get("start_offset"))
+            end = self._parse_offset(a.get("end_offset"))
+            if start is None or end is None:
+                continue
+            words.append({
+                "word": (a.get("text") or "").strip(),
+                "start": round(start, 2),
+                "end": round(end, 2),
+            })
+
+        segments = self._build_segments(text, words, annotations)
+
+        return {
+            "provider": "gemini_transcribe",
+            "language": language,
+            "full_text": text,
+            "word_timestamps": words,
+            "segment_timestamps": segments,
+            "raw_response": data,
+        }
+
+    def _build_audio_part(self, audio_file_path: str) -> Dict[str, Any]:
+        size = os.path.getsize(audio_file_path)
+        if size > self.INLINE_AUDIO_LIMIT_BYTES:
+            raise ValueError(
+                f"Audio file is {size / (1024 * 1024):.1f} MB; Gemini inline audio "
+                "accepts at most 20 MB. Extract a smaller speech track (lower bitrate "
+                "or mono 16 kHz) before transcribing this file."
+            )
+        ext = os.path.splitext(audio_file_path)[1].lower()
+        mime = self._MIME_BY_EXT.get(ext, "audio/mp3")
+        with open(audio_file_path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode("ascii")
+        return {"type": "audio", "mime_type": mime, "data": encoded}
+
+    def _extract_output(self, data: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
+        text = ""
+        annotations: List[Dict[str, Any]] = []
+        for step in data.get("steps", []):
+            for block in step.get("content", []):
+                if block.get("type") == "text":
+                    text = text or block.get("text", "")
+                    annotations.extend(block.get("annotations", []))
+        return text, annotations
+
+    def _parse_offset(self, raw: Optional[str]) -> Optional[float]:
+        if raw is None:
+            return None
+        try:
+            return float(str(raw).rstrip("s"))
+        except (TypeError, ValueError):
+            return None
+
+    def _build_segments(
+        self,
+        text: str,
+        words: List[Dict[str, Any]],
+        annotations: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """
+        Groups word annotations into sentence-level segments (the Interactions
+        API returns per-word annotations; sentence boundaries fall on terminal
+        punctuation in each word's own text).
+        """
+        if not words:
+            if text:
+                return [{"start": 0.0, "end": 0.0, "text": text}]
+            return []
+
+        segments: List[Dict[str, Any]] = []
+        current: List[Dict[str, Any]] = []
+        char_ranges = [a for a in annotations if a.get("type") == "word_info"]
+
+        for i, w in enumerate(words):
+            current.append(w)
+            bare = w["word"].rstrip("…\"')]\u201d”")
+            is_last = i == len(words) - 1
+            sentence_end = bare and bare[-1] in ".!?"
+            if sentence_end or is_last:
+                w_first = current[0]
+                w_last = current[-1]
+                if char_ranges and len(char_ranges) == len(words):
+                    try:
+                        seg_text = text[char_ranges[i - len(current) + 1]["start_index"]:char_ranges[i]["end_index"]]
+                    except (KeyError, IndexError):
+                        seg_text = " ".join(x["word"] for x in current)
+                else:
+                    seg_text = " ".join(x["word"] for x in current)
+                segments.append({
+                    "start": w_first["start"],
+                    "end": w_last["end"],
+                    "text": seg_text.strip(),
+                })
+                current = []
+
+        return segments
+
+
 def get_transcription_service() -> TranscriptionProvider:
     provider = settings.TRANSCRIPTION_PROVIDER.lower()
     if settings.is_mock_mode or provider == "mock":
         return MockTranscriptionProvider()
+    elif provider == "gemini":
+        return GeminiTranscriptionProvider()
     elif provider == "openai":
         return OpenAIWhisperProvider()
     elif provider == "assemblyai":

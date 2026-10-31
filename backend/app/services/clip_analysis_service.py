@@ -4,6 +4,7 @@ Understands audience, platform, goal, and tone; analyzes transcript segments;
 decides which stories deserve to be told, and generates explainable reasoning.
 """
 import os
+import re
 import json
 import logging
 from typing import Dict, Any, List, Optional
@@ -54,15 +55,15 @@ class ClipAnalysisService:
 
         transcript_text_block = "\n".join(formatted_segments)
 
-        prompt = self.prompt_template.format(
-            platform=platform,
-            audience=audience,
-            goal=goal,
-            tone=tone,
-            preferred_clip_types=", ".join(preferred_clip_types),
-            number_of_clips=number_of_clips,
-            transcript_segments=transcript_text_block
-        )
+        prompt = self._render_prompt(self.prompt_template, {
+            "platform": platform,
+            "audience": audience,
+            "goal": goal,
+            "tone": tone,
+            "preferred_clip_types": ", ".join(preferred_clip_types),
+            "number_of_clips": number_of_clips,
+            "transcript_segments": transcript_text_block,
+        })
 
         try:
             if settings.AI_PROVIDER.lower() == "gemini" and settings.GEMINI_API_KEY:
@@ -79,6 +80,18 @@ class ClipAnalysisService:
         except Exception as e:
             logger.error(f"LLM analysis invocation error: {e}. Falling back to deterministic demo clips.")
             return self._generate_mock_clips(number_of_clips, platform, audience, goal, tone)
+
+    _PLACEHOLDER_RE = re.compile(r"\{([a-z_][a-z_0-9]*)\}")
+
+    def _render_prompt(self, template: str, mapping: Dict[str, Any]) -> str:
+        """
+        Substitutes {placeholder} fields without touching the literal JSON braces
+        embedded in the prompt (str.format raises KeyError on those braces).
+        """
+        def _replace(match: re.Match) -> str:
+            key = match.group(1)
+            return str(mapping.get(key, match.group(0)))
+        return self._PLACEHOLDER_RE.sub(_replace, template)
 
     async def _call_gemini(self, prompt: str) -> str:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.AI_MODEL_NAME}:generateContent?key={settings.GEMINI_API_KEY}"
