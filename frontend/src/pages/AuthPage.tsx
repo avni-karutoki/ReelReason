@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import {
   Film,
   Mail,
+  MailCheck,
   Lock,
   User,
   ArrowRight,
@@ -19,14 +20,15 @@ export const AuthPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const initialMode = searchParams.get('mode') === 'signup' ? 'signup' : 'login';
 
-  const { login, signup, loginAsGuest } = useAuth();
+  const { login, signup, resetPassword, loginAsGuest } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'login' | 'signup' | 'guest'>(initialMode);
+  const [activeTab, setActiveTab] = useState<'login' | 'signup' | 'guest' | 'forgot'>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; name?: string }>({});
 
   const validate = () => {
@@ -34,7 +36,7 @@ export const AuthPage: React.FC = () => {
     if (!email || !email.includes('@')) {
       newErrors.email = 'Please enter a valid email address';
     }
-    if (!password || password.length < 6) {
+    if (activeTab !== 'forgot' && (!password || password.length < 6)) {
       newErrors.password = 'Password must be at least 6 characters';
     }
     if (activeTab === 'signup' && (!name || name.trim().length < 2)) {
@@ -50,6 +52,14 @@ export const AuthPage: React.FC = () => {
 
     setIsLoading(true);
     try {
+      if (activeTab === 'forgot') {
+        const sent = await resetPassword(email);
+        if (sent) {
+          setResetSent(true);
+        }
+        return;
+      }
+
       let success = false;
       if (activeTab === 'login') {
         success = await login(email, password);
@@ -87,7 +97,11 @@ export const AuthPage: React.FC = () => {
           </span>
         </Link>
         <h2 className="text-xl sm:text-2xl font-bold font-sans text-main">
-          {activeTab === 'signup' ? 'Create your Creator Studio account' : 'Welcome back to ReelReason'}
+          {activeTab === 'signup'
+            ? 'Create your Creator Studio account'
+            : activeTab === 'forgot'
+              ? 'Reset your password'
+              : 'Welcome back to ReelReason'}
         </h2>
         <p className="text-xs text-sub max-w-xs mx-auto">
           AI video repurposing designed for purposeful high-retention vertical reels.
@@ -173,6 +187,81 @@ export const AuthPage: React.FC = () => {
                 </button>
               </div>
             </div>
+          ) : activeTab === 'forgot' ? (
+            resetSent ? (
+              <div className="py-4 space-y-5 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto shadow-sm">
+                  <MailCheck className="w-7 h-7" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-main font-sans">
+                    Check your inbox
+                  </h3>
+                  <p className="text-xs text-sub leading-relaxed max-w-xs mx-auto">
+                    We sent a password reset link to <span className="font-semibold text-main break-all">{email}</span>. Follow the link to choose a new password.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab('login'); setResetSent(false); }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-surface-sub hover:bg-surface-ter border border-subtle text-xs font-semibold text-main transition-colors cursor-pointer"
+                >
+                  Back to Sign In
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <p className="text-xs text-sub leading-relaxed">
+                  Enter the email you signed up with and we&apos;ll send you a password reset link.
+                </p>
+
+                <div>
+                  <label className="block text-xs font-semibold text-main mb-1">
+                    Email Address
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-sub absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => { setEmail(e.target.value); setErrors(prev => ({ ...prev, email: undefined })); }}
+                      placeholder="creator@studio.com"
+                      className={`w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-canvas border text-xs text-main placeholder:text-sub/50 focus:outline-none focus:border-indigo-500 transition-colors ${
+                        errors.email ? 'border-red-500' : 'border-subtle'
+                      }`}
+                    />
+                  </div>
+                  {errors.email && (
+                    <p className="text-[11px] text-red-500 mt-1">{errors.email}</p>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 active:scale-[0.98] text-white text-xs font-bold shadow-md shadow-indigo-500/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {isLoading ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <span>Send Reset Link</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+
+                <div className="pt-2 text-center">
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('login'); setResetSent(false); }}
+                    className="text-xs text-sub hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors cursor-pointer"
+                  >
+                    Back to Sign In
+                  </button>
+                </div>
+              </form>
+            )
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               
@@ -246,6 +335,15 @@ export const AuthPage: React.FC = () => {
                 </div>
                 {errors.password && (
                   <p className="text-[11px] text-red-500 mt-1">{errors.password}</p>
+                )}
+                {activeTab === 'login' && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('forgot'); setResetSent(false); setErrors({}); }}
+                    className="mt-1.5 text-[11px] text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/10 px-1 py-0.5 rounded transition-colors font-medium cursor-pointer"
+                  >
+                    Forgot password?
+                  </button>
                 )}
               </div>
 

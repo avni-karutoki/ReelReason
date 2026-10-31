@@ -1,0 +1,19 @@
+# Secrets — never enter the image
+.env
+
+# Local virtualenv (Linux deps install fresh in the image)
+venv/
+
+# Windows-only vendored ffmpeg (the Linux image uses apt-installed ffmpeg)
+tools/
+
+# Cache & temp artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+temp/
+
+# Tests & VCS (not needed at runtime)
+tests/
+.git/
+.gitignore

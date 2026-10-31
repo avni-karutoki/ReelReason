@@ -26,6 +26,7 @@ interface AuthContextType {
   closeAuthModal: () => void;
   login: (email: string, password: string) => Promise<boolean>;
   signup: (name: string, email: string, password: string) => Promise<boolean>;
+  resetPassword: (email: string) => Promise<boolean>;
   loginAsGuest: () => void;
   logout: () => void;
 }
@@ -270,6 +271,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   };
 
+  const resetPassword = async (email: string): Promise<boolean> => {
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      toast.error('Please enter a valid email address.');
+      return false;
+    }
+
+    if (!frontendSupabase) {
+      toast.info('Demo mode: connect Supabase auth to send real reset emails.');
+      return false;
+    }
+
+    // The recovery link redirects back to /reset-password where the user
+    // chooses a new password (Supabase signs them in via the link).
+    const { error } = await frontendSupabase.auth.resetPasswordForEmail(cleanEmail, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+
+    if (error) {
+      toast.error(error.message || 'Could not send the password reset email.');
+      return false;
+    }
+
+    toast.success('Password reset link sent — check your inbox.');
+    return true;
+  };
+
   const loginAsGuest = useCallback(() => {
     persistUser(DEFAULT_GUEST_USER);
     setAuthToken('demo-token');
@@ -303,6 +332,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         closeAuthModal,
         login,
         signup,
+        resetPassword,
         loginAsGuest,
         logout
       }}

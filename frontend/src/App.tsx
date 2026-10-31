@@ -18,6 +18,7 @@ import { ExportPage } from './pages/ExportPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { AuthPage } from './pages/AuthPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 
 // Scroll to top with smooth reset on navigation
 const ScrollToTop = () => {
@@ -68,6 +69,12 @@ export default function App() {
             <Route
               path="/signup"
               element={<AuthPage />}
+            />
+
+            {/* 2b. Password Recovery Page (reached from the Supabase reset email) */}
+            <Route
+              path="/reset-password"
+              element={<ResetPasswordPage />}
             />
 
             {/* 3. Upload Page (Studio Shell) */}
