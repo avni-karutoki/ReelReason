@@ -21,8 +21,11 @@ import {
   Linkedin
 } from 'lucide-react';
 import { useProjects } from '../context/ProjectContext';
+import { useAuth } from '../context/AuthContext';
 import { SubtitleStyle, TargetPlatform, ClipCategory } from '../types';
 import { AVATAR_CREATOR_IMG } from '../data/mockData';
+import { isBackendAvailable, updateProfile } from '../api/client';
+import { ensureBackendProbed } from '../api/realMode';
 import { toast } from 'sonner';
 
 export const SettingsPage: React.FC = () => {
@@ -34,6 +37,7 @@ export const SettingsPage: React.FC = () => {
     deleteAllProjects,
     resetToMockData
   } = useProjects();
+  const { isAuthenticated, isGuest } = useAuth();
 
   // Form State initialized from userSettings
   const [displayName, setDisplayName] = useState(userSettings.displayName);
@@ -87,6 +91,33 @@ export const SettingsPage: React.FC = () => {
       defaultNumberClips
     });
     toast.success('Settings saved to local storage');
+
+    // Sync creator preferences to the authenticated backend profile
+    if (isAuthenticated && !isGuest) {
+      const platformLabel = defaultPlatform === 'reels' ? 'Instagram Reels'
+        : defaultPlatform === 'shorts' ? 'YouTube Shorts'
+        : defaultPlatform === 'facebook_reels' ? 'Facebook Reels'
+        : 'LinkedIn';
+      const categoryToBackend: Record<ClipCategory, string> = {
+        'Strong Opinion': 'strong_opinion',
+        'Practical Lesson': 'practical_lesson',
+        'Unexpected Story': 'story',
+        'Framework Breakdown': 'insight',
+        'Counter-Intuitive Truth': 'contrarian_take'
+      };
+      ensureBackendProbed(isBackendAvailable).then(up => {
+        if (!up) return;
+        updateProfile({
+          name: displayName,
+          default_platform: platformLabel,
+          default_audience: defaultAudience,
+          default_tone: defaultTone,
+          preferred_clip_types: preferredClipTypes.map(c => categoryToBackend[c] || 'insight'),
+          clips_per_video: defaultNumberClips,
+        }).then(() => toast.success('Preferences synced to your account'))
+          .catch((err) => console.warn('Profile sync failed:', (err as Error)?.message || err));
+      });
+    }
   };
 
   const handleResetToDefault = () => {

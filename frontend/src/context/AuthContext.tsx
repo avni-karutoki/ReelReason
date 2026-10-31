@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { AVATAR_CREATOR_IMG } from '../data/mockData';
+import { frontendSupabase, isSupabaseAuthConfigured } from '../api/supabaseClient';
+import { setAuthToken, getCurrentUser } from '../api/client';
 
 export interface AuthUser {
   id: string;
@@ -42,32 +44,19 @@ const DEFAULT_GUEST_USER: AuthUser = {
   createdAt: new Date().toISOString().split('T')[0]
 };
 
-const DEMO_SAVED_USERS: Record<string, { password: string; user: AuthUser }> = {
-  'maya@studioforward.co': {
-    password: 'password123',
-    user: {
-      id: 'usr-maya-01',
-      name: 'Maya Chen',
-      email: 'maya@studioforward.co',
-      avatarUrl: AVATAR_CREATOR_IMG,
-      creatorHandle: '@mayachen',
-      isGuest: false,
-      createdAt: '2026-10-20'
-    }
-  },
-  'creator@reelreason.studio': {
-    password: 'password123',
-    user: {
-      id: 'usr-creator-02',
-      name: 'Alex Rivera',
-      email: 'creator@reelreason.studio',
-      avatarUrl: AVATAR_CREATOR_IMG,
-      creatorHandle: '@alexcreates',
-      isGuest: false,
-      createdAt: '2026-10-25'
-    }
-  }
-};
+function supabaseUserToAuthUser(su: { id: string; email?: string | null; created_at?: string | null; user_metadata?: Record<string, unknown> }): AuthUser {
+  const meta = su.user_metadata || {};
+  const fullName = (meta.full_name as string) || (meta.name as string) || su.email?.split('@')[0] || 'Creator';
+  return {
+    id: su.id,
+    name: fullName,
+    email: su.email || '',
+    avatarUrl: AVATAR_CREATOR_IMG,
+    creatorHandle: `@${fullName.toLowerCase().replace(/\s+/g, '')}`,
+    isGuest: false,
+    createdAt: (su.created_at || new Date().toISOString()).split('T')[0],
+  };
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(() => {
@@ -77,7 +66,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return JSON.parse(saved);
       }
     } catch (e) {
-      console.warn('Failed to parse auth session:', e);
+      console.warn('Failed to parse auth session:', (e as Error)?.message || e);
     }
     // Default to Guest user so demo is completely seamless
     return DEFAULT_GUEST_USER;
@@ -104,14 +93,74 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem(STORAGE_KEY_AUTH);
       }
     } catch (e) {
-      console.warn('Failed to save auth session to localStorage:', e);
+      console.warn('Failed to save auth session to localStorage:', (e as Error)?.message || e);
     }
   };
 
-  const login = async (email: string, password: string): Promise<boolean> => {
-    // Simulated network delay for smooth realistic animation
-    await new Promise(res => setTimeout(res, 350));
+  /* ------------------------------------------------------------------ */
+  /* Real Supabase auth: hydrate the session and feed its JWT to the API  */
+  /* ------------------------------------------------------------------ */
+  useEffect(() => {
+    const sb = frontendSupabase;
+    if (!sb) {
+      // Demo mode — guest/demo tokens work against the backend's mock mode
+      setAuthToken('demo-token');
+      return;
+    }
 
+    let cancelled = false;
+
+    const applySession = async () => {
+      const { data, error } = await sb.auth.getSession();
+      if (cancelled || error) return;
+      const session = data.session;
+      setAuthToken(session?.access_token ?? null);
+      if (session?.user) {
+        const authUser = supabaseUserToAuthUser(session.user);
+        if (!cancelled) persistUser(authUser);
+      } else if (!cancelled) {
+        persistUser(DEFAULT_GUEST_USER);
+      }
+    };
+
+    applySession();
+
+    const { data: listener } = sb.auth.onAuthStateChange((_event, session) => {
+      if (cancelled) return;
+      setAuthToken(session?.access_token ?? null);
+      if (session?.user) {
+        const authUser = supabaseUserToAuthUser(session.user);
+        persistUser(authUser);
+      } else {
+        persistUser(DEFAULT_GUEST_USER);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  /* Pull the backend-side profile (ensures public.users row + defaults exist) */
+  useEffect(() => {
+    if (!frontendSupabase || !user || user.isGuest) return;
+    let cancelled = false;
+    getCurrentUser()
+      .then((profile) => {
+        if (cancelled || !profile) return;
+        const name = profile.full_name || user.name;
+        const handle = profile.creator_handle || user.creatorHandle;
+        if (name !== user.name || handle !== user.creatorHandle) {
+          persistUser({ ...user, name, creatorHandle: handle });
+        }
+      })
+      .catch(() => { /* backend offline — local profile is authoritative */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSupabaseAuthConfigured, user?.id]);
+
+  const login = async (email: string, password: string): Promise<boolean> => {
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = password.trim();
 
@@ -120,41 +169,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return false;
     }
 
-    // Check if known demo user or accept valid format for frontend demo
-    const existing = DEMO_SAVED_USERS[cleanEmail];
-    let loggedUser: AuthUser;
-
-    if (existing) {
-      if (existing.password !== cleanPass && cleanPass !== 'demo' && cleanPass !== 'password123') {
-        toast.error('Incorrect password. (Tip: Use "password123" for demo accounts)');
-        return false;
+    if (!frontendSupabase) {
+      // ----------------------------------------------------------------
+      // Demo fallback (no Supabase configured) — kept identical to before
+      // ----------------------------------------------------------------
+      if (isSupabaseAuthConfigured === false) {
+        await new Promise(res => setTimeout(res, 350));
+        const inferredName = cleanEmail.split('@')[0]
+          .replace(/[._-]/g, ' ')
+          .replace(/\b\w/g, l => l.toUpperCase());
+        const loggedUser: AuthUser = {
+          id: `usr-${Date.now().toString(36)}`,
+          name: inferredName || 'Studio Creator',
+          email: cleanEmail,
+          avatarUrl: AVATAR_CREATOR_IMG,
+          creatorHandle: `@${cleanEmail.split('@')[0]}`,
+          isGuest: false,
+          createdAt: new Date().toISOString().split('T')[0]
+        };
+        persistUser(loggedUser);
+        setIsAuthModalOpen(false);
+        toast.success(`Welcome back, ${loggedUser.name}!`);
+        return true;
       }
-      loggedUser = existing.user;
-    } else {
-      // Dynamic user generation for demo simulation
-      const inferredName = cleanEmail.split('@')[0]
-        .replace(/[._-]/g, ' ')
-        .replace(/\b\w/g, l => l.toUpperCase());
-      loggedUser = {
-        id: `usr-${Date.now().toString(36)}`,
-        name: inferredName || 'Studio Creator',
-        email: cleanEmail,
-        avatarUrl: AVATAR_CREATOR_IMG,
-        creatorHandle: `@${cleanEmail.split('@')[0]}`,
-        isGuest: false,
-        createdAt: new Date().toISOString().split('T')[0]
-      };
     }
 
-    persistUser(loggedUser);
+    // Real Supabase sign-in
+    const { data, error } = await frontendSupabase!.auth.signInWithPassword({
+      email: cleanEmail,
+      password: cleanPass,
+    });
+
+    if (error) {
+      toast.error(error.message || 'Could not sign in. Check your credentials.');
+      return false;
+    }
+
     setIsAuthModalOpen(false);
-    toast.success(`Welcome back, ${loggedUser.name}!`);
+    toast.success(`Welcome back, ${data.user ? supabaseUserToAuthUser(data.user).name : 'Creator'}!`);
     return true;
   };
 
   const signup = async (name: string, email: string, password: string): Promise<boolean> => {
-    await new Promise(res => setTimeout(res, 400));
-
     const cleanName = name.trim();
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = password.trim();
@@ -172,31 +228,67 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return false;
     }
 
-    const newUser: AuthUser = {
-      id: `usr-${Date.now().toString(36)}`,
-      name: cleanName,
-      email: cleanEmail,
-      avatarUrl: AVATAR_CREATOR_IMG,
-      creatorHandle: `@${cleanName.toLowerCase().replace(/\s+/g, '')}`,
-      isGuest: false,
-      createdAt: new Date().toISOString().split('T')[0]
-    };
+    if (!frontendSupabase) {
+      // Demo fallback
+      await new Promise(res => setTimeout(res, 400));
+      const newUser: AuthUser = {
+        id: `usr-${Date.now().toString(36)}`,
+        name: cleanName,
+        email: cleanEmail,
+        avatarUrl: AVATAR_CREATOR_IMG,
+        creatorHandle: `@${cleanName.toLowerCase().replace(/\s+/g, '')}`,
+        isGuest: false,
+        createdAt: new Date().toISOString().split('T')[0]
+      };
+      persistUser(newUser);
+      setIsAuthModalOpen(false);
+      toast.success(`Account created successfully! Welcome to ReelReason, ${cleanName}.`);
+      return true;
+    }
 
-    persistUser(newUser);
+    const { data, error } = await frontendSupabase!.auth.signUp({
+      email: cleanEmail,
+      password: cleanPass,
+      options: {
+        data: { full_name: cleanName, creator_handle: `@${cleanName.toLowerCase().replace(/\s+/g, '')}` },
+      },
+    });
+
+    if (error) {
+      toast.error(error.message || 'Could not create the account.');
+      return false;
+    }
+
+    // ensure_user_profile on the backend creates the public.users row on first API call
     setIsAuthModalOpen(false);
-    toast.success(`Account created successfully! Welcome to ReelReason, ${cleanName}.`);
+
+    if (data.session) {
+      toast.success(`Account created successfully! Welcome to ReelReason, ${cleanName}.`);
+    } else {
+      toast.success('Account created! Check your inbox to confirm your email, then sign in.');
+    }
     return true;
   };
 
   const loginAsGuest = useCallback(() => {
     persistUser(DEFAULT_GUEST_USER);
+    setAuthToken('demo-token');
     setIsAuthModalOpen(false);
     toast.info('Continuing as Guest Demo Creator. All features are accessible.');
   }, []);
 
   const logout = useCallback(() => {
-    persistUser(DEFAULT_GUEST_USER);
-    toast.info('Signed out. Reset to Guest Demo mode.');
+    if (frontendSupabase) {
+      frontendSupabase.auth.signOut().finally(() => {
+        setAuthToken(null);
+        persistUser(DEFAULT_GUEST_USER);
+        toast.info('Signed out. Reset to Guest Demo mode.');
+      });
+    } else {
+      setAuthToken(null);
+      persistUser(DEFAULT_GUEST_USER);
+      toast.info('Signed out. Reset to Guest Demo mode.');
+    }
   }, []);
 
   return (

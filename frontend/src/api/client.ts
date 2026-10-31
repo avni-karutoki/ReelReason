@@ -309,3 +309,19 @@ export interface BackendUser {
 export async function getCurrentUser(): Promise<BackendUser> {
   return apiFetch<BackendUser>('/api/users/me', { method: 'GET' });
 }
+
+export interface BackendProfilePatch {
+  name?: string;
+  default_platform?: string;
+  default_audience?: string;
+  default_tone?: string;
+  preferred_clip_types?: string[];
+  clips_per_video?: number;
+}
+
+export async function updateProfile(patch: BackendProfilePatch): Promise<BackendUser> {
+  return apiFetch<BackendUser>('/api/users/me', {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
