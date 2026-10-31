@@ -103,11 +103,26 @@ class ClipAnalysisService:
         momentary 503 does not downgrade a paid analysis to demo clips.
         """
         import asyncio
-        backoff_seconds = [4.0, 10.0, 20.0]
+        backoff_seconds = [5.0, 10.0]
+        last_exception: Optional[BaseException] = None
         for attempt, wait in enumerate([0.0] + backoff_seconds):
             if wait:
                 await asyncio.sleep(wait)
-            resp = await client.post(url, json=payload)
+            try:
+                resp = await client.post(url, json=payload)
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                # Transport failures (hanging endpoint, connection reset) are
+                # retryable just like 5xx responses.
+                last_exception = exc
+                if attempt < len(backoff_seconds):
+                    logger.warning(
+                        f"{log_prefix} request failed ({type(exc).__name__}); "
+                        f"retrying in {backoff_seconds[attempt]}s"
+                    )
+                    continue
+                raise RuntimeError(
+                    f"{log_prefix} request failed after retries: {type(exc).__name__}"
+                )
             if resp.status_code in self._RETRYABLE_STATUS:
                 if attempt < len(backoff_seconds):
                     logger.warning(
@@ -116,7 +131,7 @@ class ClipAnalysisService:
                     )
                     continue
             return resp
-        return resp
+        raise RuntimeError(f"{log_prefix} request failed after retries: {type(last_exception).__name__}")
 
     def _gemini_model_chain(self) -> List[str]:
         """Primary analysis model first, then verified-free fallbacks for capacity relief."""
@@ -142,7 +157,12 @@ class ClipAnalysisService:
                 if i > 0:
                     logger.warning(f"Gemini analysis falling back to model {model}")
                 url = base_url.format(model=model, key=settings.GEMINI_API_KEY)
-                resp = await self._post_with_retry(client, url, payload, f"Gemini analysis ({model})")
+                try:
+                    resp = await self._post_with_retry(client, url, payload, f"Gemini analysis ({model})")
+                except RuntimeError as exc:
+                    # Model is unreachable (hanging/timeouts) — try the next one.
+                    last_error = str(exc)
+                    continue
                 if resp.status_code != 200:
                     last_error = resp.text
                     continue
