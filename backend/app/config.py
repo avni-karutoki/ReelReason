@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     AI_PROVIDER: str = Field(default="mock")
     OPENAI_API_KEY: Optional[str] = Field(default=None)
     GEMINI_API_KEY: Optional[str] = Field(default=None)
-    AI_MODEL_NAME: str = Field(default="gemini-2.5-flash")
+    AI_MODEL_NAME: str = Field(default="gemini-3.8-flash")
 
     # Transcription Settings (options: 'mock', 'openai', 'assemblyai')
     TRANSCRIPTION_PROVIDER: str = Field(default="mock")
