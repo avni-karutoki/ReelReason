@@ -20,6 +20,10 @@ logging.basicConfig(
     level=logging.INFO if not settings.DEBUG else logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
+# Third-party transport libraries log every HTTP frame at DEBUG (hpack/httpcore);
+# keep them at INFO so server logs stay readable even in debug mode.
+for _noisy in ("hpack", "httpcore", "httpx", "httpx._main", "urllib3"):
+    logging.getLogger(_noisy).setLevel(logging.INFO)
 logger = logging.getLogger("reelreason.main")
 
 
@@ -51,7 +55,7 @@ app = FastAPI(
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

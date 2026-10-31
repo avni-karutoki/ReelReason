@@ -11,13 +11,13 @@ class Settings(BaseSettings):
     # App Settings
     APP_NAME: str = Field(default="ReelReason API")
     ENVIRONMENT: str = Field(default="development")  # development, demo, production
-    DEBUG: bool = Field(default=True)
+    DEBUG: bool = Field(default=False)
     PORT: int = Field(default=8000)
     HOST: str = Field(default="0.0.0.0")
     FRONTEND_URL: str = Field(default="http://localhost:5173")
-    ALLOWED_ORIGINS: List[str] = Field(
-        default=["http://localhost:5173", "http://localhost:3000", "*"]
-    )
+    # Comma-separated list of browser origins allowed to call the API.
+    # In production the "*" wildcard is ignored (incompatible with credentials).
+    ALLOWED_ORIGINS: str = Field(default="http://localhost:5173,http://localhost:3000,*")
 
     # Supabase Credentials
     SUPABASE_URL: str = Field(default="https://placeholder.supabase.co")
@@ -68,6 +68,15 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
+
+    @property
+    def cors_origins(self) -> List[str]:
+        """Parses ALLOWED_ORIGINS; the '*' wildcard is dropped in production because
+        CORS with credentials requires explicit origins."""
+        origins = [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
+        if self.ENVIRONMENT.lower() == "production":
+            origins = [o for o in origins if o != "*"]
+        return origins
 
     @property
     def is_mock_mode(self) -> bool:

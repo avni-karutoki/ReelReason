@@ -215,6 +215,16 @@ class RendererService:
 
             video_url_out, thumb_url_out = await asyncio.to_thread(_work)
 
+            # Cleanup per-reel temp artifacts (source download is kept cached for re-renders)
+            for path in (os.path.join(settings.TEMP_DIR, f"{reel_id}_reel.mp4"),
+                         os.path.join(settings.TEMP_DIR, f"{reel_id}_thumb.jpg"),
+                         os.path.join(settings.TEMP_DIR, f"subs_{reel_id}.ass")):
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                except OSError:
+                    logger.debug(f"Could not remove temp artifact: {path}")
+
             supabase_service.service_client.table("rendered_reels").update({
                 "render_status": "completed",
                 "video_url": video_url_out,
