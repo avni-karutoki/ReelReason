@@ -27,8 +27,8 @@ async def get_project_transcript(
     if proj_res.data[0].get("user_id") != current_user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    # 2. Fetch transcript record
-    t_res = supabase.service_client.table("transcripts").select("*").eq("project_id", project_id).execute()
+    # 2. Fetch transcript record (latest run wins — re-analysis appends rows)
+    t_res = supabase.service_client.table("transcripts").select("*").eq("project_id", project_id).order("created_at", desc=True).execute()
     if not t_res.data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

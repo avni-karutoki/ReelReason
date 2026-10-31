@@ -44,8 +44,8 @@ async def request_clip_render(
     if project.get("user_id") != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this project")
 
-    # 3. Retrieve word timestamps from transcript if available
-    t_res = supabase.service_client.table("transcripts").select("word_timestamps").eq("project_id", project_id).execute()
+    # 3. Retrieve word timestamps from latest transcript if available
+    t_res = supabase.service_client.table("transcripts").select("word_timestamps").eq("project_id", project_id).order("created_at", desc=True).execute()
     word_timestamps = t_res.data[0].get("word_timestamps", []) if t_res.data else []
 
     # 4. Dispatch render job
