@@ -93,6 +93,31 @@ class ClipAnalysisService:
             return str(mapping.get(key, match.group(0)))
         return self._PLACEHOLDER_RE.sub(_replace, template)
 
+    _RETRYABLE_STATUS = {429, 500, 503, 504}
+
+    async def _post_with_retry(
+        self, client: "httpx.AsyncClient", url: str, payload: Dict[str, Any], log_prefix: str
+    ) -> "httpx.Response":
+        """
+        Retries transient LLM API failures (rate limits, capacity spikes) so a
+        momentary 503 does not downgrade a paid analysis to demo clips.
+        """
+        import asyncio
+        backoff_seconds = [4.0, 10.0, 20.0]
+        for attempt, wait in enumerate([0.0] + backoff_seconds):
+            if wait:
+                await asyncio.sleep(wait)
+            resp = await client.post(url, json=payload)
+            if resp.status_code in self._RETRYABLE_STATUS:
+                if attempt < len(backoff_seconds):
+                    logger.warning(
+                        f"{log_prefix} got {resp.status_code}; retrying in "
+                        f"{backoff_seconds[attempt]}s"
+                    )
+                    continue
+            return resp
+        return resp
+
     async def _call_gemini(self, prompt: str) -> str:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.AI_MODEL_NAME}:generateContent?key={settings.GEMINI_API_KEY}"
         payload = {
@@ -102,8 +127,8 @@ class ClipAnalysisService:
                 "response_mime_type": "application/json"
             }
         }
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            resp = await client.post(url, json=payload)
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await self._post_with_retry(client, url, payload, "Gemini analysis")
             if resp.status_code != 200:
                 raise RuntimeError(f"Gemini API returned error: {resp.text}")
             data = resp.json()
@@ -124,8 +149,8 @@ class ClipAnalysisService:
             "response_format": {"type": "json_object"},
             "temperature": 0.4
         }
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            resp = await client.post(url, headers=headers, json=payload)
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await self._post_with_retry(client, url, payload, "OpenAI analysis")
             if resp.status_code != 200:
                 raise RuntimeError(f"OpenAI API returned error: {resp.text}")
             data = resp.json()
