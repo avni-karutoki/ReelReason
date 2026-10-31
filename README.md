@@ -62,9 +62,10 @@ fully client-side demo mode, so it never breaks.
 
 ```text
 Upload / YouTube URL ──► POST /api/projects ──► Background pipeline
-                                                 ├─ yt-dlp / upload → FFmpeg audio → Whisper transcript
+                                                 ├─ yt-dlp / upload → FFmpeg audio → transcript (Gemini or Whisper, word timestamps)
                                                  ├─ Gemini reasoning → weighted explainable clip scoring
-                                                 └─ Remotion 9:16 render dispatch (queued → completed)
+                                                 └─ 9:16 render (Remotion microservice, or built-in FFmpeg renderer with
+                                                    burned-in word-timed captions when Remotion isn't connected)
 Studio polls GET /api/projects/{id}/status ──► clips surface in the dashboard ──► render & export
 ```
 

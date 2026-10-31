@@ -119,3 +119,75 @@ def trim_video_clip(
         raise RuntimeError(f"FFmpeg video trim error: {result.stderr}")
 
     return output_clip_path
+
+
+def format_ass_timestamp(seconds: float) -> str:
+    """
+    Formats seconds (float) as an ASS subtitle timestamp: H:MM:SS.CC
+    """
+    seconds = max(0.0, seconds)
+    hours = int(seconds // 3600)
+    minutes = int(seconds % 3600 // 60)
+    total_cents = round((seconds % 60) * 100)
+    return f"{hours}:{minutes:02d}:{total_cents // 100:02d}.{total_cents % 100:02d}"
+
+
+def render_vertical_reel_with_subtitles(
+    input_video_path: str,
+    output_clip_path: str,
+    start_seconds: float,
+    end_seconds: float,
+    ass_path: Optional[str] = None
+) -> str:
+    """
+    Renders a 9:16 vertical single-composition reel (720x1280) from the source video,
+    optionally burning ASS subtitle captions onto the frames. Re-encodes H.264/AAC
+    for lossless playback in every browser/player.
+    """
+    if not os.path.exists(input_video_path):
+        raise FileNotFoundError(f"Input video not found: {input_video_path}")
+
+    # Absolutize so the (optionally relocated) subprocess cwd cannot break relative paths
+    input_video_path = os.path.abspath(input_video_path)
+    output_clip_path = os.path.abspath(output_clip_path)
+    if ass_path:
+        ass_path = os.path.abspath(ass_path)
+        if not os.path.exists(ass_path):
+            ass_path = None
+    os.makedirs(os.path.dirname(output_clip_path), exist_ok=True)
+    duration = max(0.1, end_seconds - start_seconds)
+
+    filters = ["crop=ih*9/16:ih", "scale=720:1280", "setsar=1"]
+    if ass_path and os.path.exists(ass_path):
+        # Use the subtitle file's bare filename with ffmpeg's cwd set to its folder,
+        # avoiding Windows drive-letter escaping issues in the filter argument.
+        filters.append(f"ass={os.path.basename(ass_path)}")
+
+    cmd = [
+        resolve_binary("ffmpeg"),
+        "-y",
+        "-ss", str(start_seconds),
+        "-i", input_video_path,
+        "-t", str(duration),
+        "-vf", ",".join(filters),
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "23",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
+        output_clip_path
+    ]
+
+    workdir = os.path.dirname(os.path.abspath(ass_path)) if ass_path else None
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=workdir
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"FFmpeg vertical reel render error: {result.stderr[-2000:]}")
+
+    return output_clip_path

@@ -434,11 +434,12 @@ create policy "Users can view own project job logs"
 -- 5. SUPABASE STORAGE BUCKETS & POLICIES
 -- ==============================================================================
 
--- Create Storage buckets
+-- Create Storage buckets (public read: the app serves videos/audio/rendered reels
+-- and thumbnails via public storage URLs in the frontend)
 insert into storage.buckets (id, name, public)
 values 
-  ('reelreason-videos', 'reelreason-videos', false),
-  ('reelreason-audio', 'reelreason-audio', false),
+  ('reelreason-videos', 'reelreason-videos', true),
+  ('reelreason-audio', 'reelreason-audio', true),
   ('reelreason-rendered', 'reelreason-rendered', true),
   ('reelreason-thumbnails', 'reelreason-thumbnails', true)
 on conflict (id) do nothing;
