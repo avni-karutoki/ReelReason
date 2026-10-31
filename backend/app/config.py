@@ -56,6 +56,7 @@ class Settings(BaseSettings):
 
     # Storage paths
     TEMP_DIR: str = Field(default="/tmp/reelreason")
+    FFMPEG_DIR: Optional[str] = Field(default=None)  # dir containing ffmpeg/ffprobe; defaults to vendored tools dir or system PATH
 
     model_config = SettingsConfigDict(
         env_file=".env",

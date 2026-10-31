@@ -4,11 +4,13 @@ Crucial Constraint 1: Implement yt-dlp in services/ffmpeg_service.py to download
 before FFmpeg audio extraction.
 """
 import os
+import sys
 import subprocess
 import logging
 from typing import Dict, Any, Optional
 from app.config import settings
 from app.utils.ffmpeg_utils import extract_audio_from_video, probe_video_metadata, trim_video_clip
+from app.utils.ffmpeg_paths import resolve_binary, ensure_ffmpeg_on_path
 
 logger = logging.getLogger("reelreason.ffmpeg_service")
 
@@ -16,6 +18,8 @@ logger = logging.getLogger("reelreason.ffmpeg_service")
 class FFmpegService:
     def __init__(self):
         os.makedirs(settings.TEMP_DIR, exist_ok=True)
+        # Make the resolved FFmpeg toolchain visible to yt-dlp's internal merge calls
+        ensure_ffmpeg_on_path()
 
     def download_youtube_video(self, youtube_url: str, output_dir: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -77,9 +81,11 @@ class FFmpegService:
         except Exception as e:
             logger.warning(f"yt_dlp library download error: {e}. Falling back to CLI subprocess.")
 
-        # 2. Fallback to CLI command execution
+        # 2. Fallback to CLI command execution (run via the installed python module
+        #    so it works on Windows even without a yt-dlp.exe on PATH)
         cmd = [
-            "yt-dlp",
+            sys.executable,
+            "-m", "yt_dlp",
             "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
             "--no-playlist",
             "-o", output_template,
@@ -145,7 +151,7 @@ class FFmpegService:
             return output_path
 
         cmd = [
-            "ffmpeg",
+            resolve_binary("ffmpeg"),
             "-y",
             "-ss", str(timestamp_sec),
             "-i", video_path,

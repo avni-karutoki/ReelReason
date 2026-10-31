@@ -13,6 +13,7 @@ from fastapi.exceptions import RequestValidationError
 
 from app.config import settings
 from app.routes import projects, transcripts, clips, reels, feedback, users
+from app.utils.ffmpeg_paths import ensure_ffmpeg_on_path
 
 # Configure Structured Logging
 logging.basicConfig(
@@ -27,6 +28,8 @@ async def lifespan(app: FastAPI):
     """Application startup and shutdown lifecycle management."""
     logger.info(f"Starting {settings.APP_NAME} in '{settings.ENVIRONMENT}' environment (AI_PROVIDER={settings.AI_PROVIDER})")
     os.makedirs(settings.TEMP_DIR, exist_ok=True)
+    # Make vendored/system FFmpeg visible to all subprocesses (ffmpeg, ffprobe, yt-dlp merges)
+    ensure_ffmpeg_on_path()
     yield
     logger.info(f"Shutting down {settings.APP_NAME}")
 

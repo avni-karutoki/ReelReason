@@ -8,6 +8,9 @@ Thumbs.db
 # Dependencies
 node_modules/
 
+# Vendored binary toolchain (ffmpeg/ffprobe static builds)
+backend/tools/
+
 # Build outputs
 dist/
 build/

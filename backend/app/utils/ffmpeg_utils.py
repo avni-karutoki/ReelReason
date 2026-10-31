@@ -7,6 +7,8 @@ import json
 import logging
 from typing import Dict, Any, Optional
 
+from app.utils.ffmpeg_paths import resolve_binary
+
 logger = logging.getLogger("reelreason.ffmpeg_utils")
 
 
@@ -18,7 +20,7 @@ def probe_video_metadata(video_path: str) -> Dict[str, Any]:
         raise FileNotFoundError(f"Video file not found at: {video_path}")
 
     cmd = [
-        "ffprobe",
+        resolve_binary("ffprobe"),
         "-v", "error",
         "-show_entries", "format=duration,size,bit_rate:stream=width,height,codec_type,codec_name",
         "-of", "json",
@@ -64,7 +66,7 @@ def extract_audio_from_video(video_path: str, output_audio_path: str) -> str:
 
     # -vn: disable video, -acodec: mp3 or pcm, -ar: 16000 (ideal for Whisper), -ac 1 (mono)
     cmd = [
-        "ffmpeg",
+        resolve_binary("ffmpeg"),
         "-y",               # overwrite output
         "-i", video_path,   # input file
         "-vn",              # no video
@@ -101,7 +103,7 @@ def trim_video_clip(
     duration = max(0.1, end_seconds - start_seconds)
 
     cmd = [
-        "ffmpeg",
+        resolve_binary("ffmpeg"),
         "-y",
         "-ss", str(start_seconds),
         "-i", input_video_path,
