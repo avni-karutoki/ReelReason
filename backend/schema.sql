@@ -224,6 +224,11 @@ begin
 end;
 $$ language plpgsql;
 
+drop trigger if exists set_users_updated_at on public.users;
+drop trigger if exists set_video_projects_updated_at on public.video_projects;
+drop trigger if exists set_clip_suggestions_updated_at on public.clip_suggestions;
+drop trigger if exists set_rendered_reels_updated_at on public.rendered_reels;
+
 create trigger set_users_updated_at
   before update on public.users
   for each row execute function public.handle_updated_at();
@@ -255,6 +260,8 @@ alter table public.clip_feedback enable row level security;
 alter table public.job_logs enable row level security;
 
 -- 4.1 Users table policies
+drop policy if exists "Users can view own profile" on public.users;
+drop policy if exists "Users can update own profile" on public.users;
 create policy "Users can view own profile"
   on public.users for select
   using (auth.uid() = id);
@@ -264,6 +271,10 @@ create policy "Users can update own profile"
   using (auth.uid() = id);
 
 -- 4.2 Video projects policies
+drop policy if exists "Users can view own projects" on public.video_projects;
+drop policy if exists "Users can insert own projects" on public.video_projects;
+drop policy if exists "Users can update own projects" on public.video_projects;
+drop policy if exists "Users can delete own projects" on public.video_projects;
 create policy "Users can view own projects"
   on public.video_projects for select
   using (auth.uid() = user_id);
@@ -281,6 +292,10 @@ create policy "Users can delete own projects"
   using (auth.uid() = user_id);
 
 -- 4.3 Transcripts policies (via project ownership)
+drop policy if exists "Users can view own project transcripts" on public.transcripts;
+drop policy if exists "Users can insert own project transcripts" on public.transcripts;
+drop policy if exists "Users can update own project transcripts" on public.transcripts;
+drop policy if exists "Users can delete own project transcripts" on public.transcripts;
 create policy "Users can view own project transcripts"
   on public.transcripts for select
   using (
@@ -322,6 +337,9 @@ create policy "Users can delete own project transcripts"
   );
 
 -- 4.4 Transcript segments policies
+drop policy if exists "Users can view own project segments" on public.transcript_segments;
+drop policy if exists "Users can insert own project segments" on public.transcript_segments;
+drop policy if exists "Users can delete own project segments" on public.transcript_segments;
 create policy "Users can view own project segments"
   on public.transcript_segments for select
   using (
@@ -353,6 +371,10 @@ create policy "Users can delete own project segments"
   );
 
 -- 4.5 Clip suggestions policies
+drop policy if exists "Users can view own project clips" on public.clip_suggestions;
+drop policy if exists "Users can insert own project clips" on public.clip_suggestions;
+drop policy if exists "Users can update own project clips" on public.clip_suggestions;
+drop policy if exists "Users can delete own project clips" on public.clip_suggestions;
 create policy "Users can view own project clips"
   on public.clip_suggestions for select
   using (
@@ -394,6 +416,10 @@ create policy "Users can delete own project clips"
   );
 
 -- 4.6 Rendered reels policies
+drop policy if exists "Users can view own rendered reels" on public.rendered_reels;
+drop policy if exists "Users can insert own rendered reels" on public.rendered_reels;
+drop policy if exists "Users can update own rendered reels" on public.rendered_reels;
+drop policy if exists "Users can delete own rendered reels" on public.rendered_reels;
 create policy "Users can view own rendered reels"
   on public.rendered_reels for select
   using (auth.uid() = user_id);
@@ -411,6 +437,8 @@ create policy "Users can delete own rendered reels"
   using (auth.uid() = user_id);
 
 -- 4.7 Clip feedback policies
+drop policy if exists "Users can view own clip feedback" on public.clip_feedback;
+drop policy if exists "Users can insert own clip feedback" on public.clip_feedback;
 create policy "Users can view own clip feedback"
   on public.clip_feedback for select
   using (auth.uid() = user_id);
@@ -420,6 +448,7 @@ create policy "Users can insert own clip feedback"
   with check (auth.uid() = user_id);
 
 -- 4.8 Job logs policies
+drop policy if exists "Users can view own project job logs" on public.job_logs;
 create policy "Users can view own project job logs"
   on public.job_logs for select
   using (
@@ -445,6 +474,9 @@ values
 on conflict (id) do nothing;
 
 -- 5.1 Storage policies for videos
+drop policy if exists "Users can upload to own video folder" on storage.objects;
+drop policy if exists "Users can read own uploaded videos" on storage.objects;
+drop policy if exists "Users can delete own uploaded videos" on storage.objects;
 create policy "Users can upload to own video folder"
   on storage.objects for insert
   with check (
@@ -467,6 +499,8 @@ create policy "Users can delete own uploaded videos"
   );
 
 -- 5.2 Storage policies for audio
+drop policy if exists "Users can upload to own audio folder" on storage.objects;
+drop policy if exists "Users can read own audio files" on storage.objects;
 create policy "Users can upload to own audio folder"
   on storage.objects for insert
   with check (
@@ -482,6 +516,8 @@ create policy "Users can read own audio files"
   );
 
 -- 5.3 Storage policies for rendered reels (publicly readable via signed/public URL)
+drop policy if exists "Users can read rendered reels" on storage.objects;
+drop policy if exists "Users can upload rendered reels" on storage.objects;
 create policy "Users can read rendered reels"
   on storage.objects for select
   using (bucket_id = 'reelreason-rendered');
@@ -494,6 +530,7 @@ create policy "Users can upload rendered reels"
   );
 
 -- 5.4 Storage policies for thumbnails
+drop policy if exists "Users can read thumbnails" on storage.objects;
 create policy "Users can read thumbnails"
   on storage.objects for select
   using (bucket_id = 'reelreason-thumbnails');

@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: reelreason-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: FRONTEND_URL
+        value: https://reel-reason.vercel.app
+      - key: ALLOWED_ORIGINS
+        value: https://reel-reason.vercel.app
+      - key: AI_PROVIDER
+        value: gemini
+      - key: TRANSCRIPTION_PROVIDER
+        value: mock
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
