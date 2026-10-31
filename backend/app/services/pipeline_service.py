@@ -76,7 +76,7 @@ class PipelineService:
                         content_type="video/mp4"
                     )
                 else:
-                    storage_url = f"{settings.SUPABASE_URL}/storage/v1/object/public/{settings.SUPABASE_VIDEO_BUCKET}/{project_id}.mp4"
+                    storage_url = f"{settings.SUPABASE_URL}/storage/v1/object/public/{settings.SUPABASE_VIDEO_BUCKET}/{user_id}/{project_id}.mp4"
 
                 # Update project with video_path and duration
                 await _offload(lambda: supabase_service.service_client.table("video_projects").update({
