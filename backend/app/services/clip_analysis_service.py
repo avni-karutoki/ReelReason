@@ -118,8 +118,16 @@ class ClipAnalysisService:
             return resp
         return resp
 
+    def _gemini_model_chain(self) -> List[str]:
+        """Primary analysis model first, then verified-free fallbacks for capacity relief."""
+        models = [settings.AI_MODEL_NAME]
+        for fallback in settings.GEMINI_FALLBACK_MODELS.split(","):
+            name = fallback.strip()
+            if name and name not in models:
+                models.append(name)
+        return models
+
     async def _call_gemini(self, prompt: str) -> str:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.AI_MODEL_NAME}:generateContent?key={settings.GEMINI_API_KEY}"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
@@ -127,12 +135,20 @@ class ClipAnalysisService:
                 "response_mime_type": "application/json"
             }
         }
+        base_url = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+        last_error: Optional[str] = None
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await self._post_with_retry(client, url, payload, "Gemini analysis")
-            if resp.status_code != 200:
-                raise RuntimeError(f"Gemini API returned error: {resp.text}")
-            data = resp.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"]
+            for i, model in enumerate(self._gemini_model_chain()):
+                if i > 0:
+                    logger.warning(f"Gemini analysis falling back to model {model}")
+                url = base_url.format(model=model, key=settings.GEMINI_API_KEY)
+                resp = await self._post_with_retry(client, url, payload, f"Gemini analysis ({model})")
+                if resp.status_code != 200:
+                    last_error = resp.text
+                    continue
+                data = resp.json()
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+        raise RuntimeError(f"Gemini API returned error: {last_error}")
 
     async def _call_openai(self, prompt: str) -> str:
         url = "https://api.openai.com/v1/chat/completions"

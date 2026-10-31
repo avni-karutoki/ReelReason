@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     ASSEMBLYAI_API_KEY: Optional[str] = Field(default=None)
     GEMINI_TRANSCRIBE_MODEL: str = Field(default="gemini-3.5-transcribe")
 
+    # Optional comma-separated fallback models for the analysis call when the
+    # primary model hits rate limits or capacity spikes.
+    GEMINI_FALLBACK_MODELS: str = Field(default="gemini-3.5-flash,gemini-3.5-flash-lite")
+
     # Remotion Renderer Service
     RENDERER_BASE_URL: str = Field(default="http://localhost:3000")
     RENDERER_API_KEY: str = Field(default="reelreason_renderer_secret")
