@@ -17,7 +17,7 @@ services:
       - key: AI_PROVIDER
         value: gemini
       - key: TRANSCRIPTION_PROVIDER
-        value: mock
+        value: gemini
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_ANON_KEY
