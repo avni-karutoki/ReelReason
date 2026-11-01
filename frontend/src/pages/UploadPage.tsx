@@ -220,7 +220,7 @@ export const UploadPage: React.FC = () => {
   ];
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="w-full min-w-0 max-w-4xl mx-auto space-y-6 sm:space-y-8">
       
       {/* Page Title & Context Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-subtle">

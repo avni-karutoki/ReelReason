@@ -21,10 +21,10 @@ export const LandingPage: React.FC = () => {
   const { user, openAuthModal, loginAsGuest } = useAuth();
 
   return (
-    <div className="min-h-screen bg-canvas text-main transition-colors duration-200 overflow-hidden">
+    <div className="w-full min-w-0 min-h-screen bg-canvas text-main transition-colors duration-200 overflow-hidden">
       
       {/* Ambient background glow effects */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-gradient-to-b from-indigo-600/15 via-violet-600/10 to-transparent blur-3xl pointer-events-none -z-10" />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-[1000px] h-[500px] bg-gradient-to-b from-indigo-600/15 via-violet-600/10 to-transparent blur-3xl pointer-events-none -z-10" />
 
       {/* Hero Section */}
       <section className="relative pt-12 pb-20 md:pt-20 md:pb-28 border-b border-subtle">
@@ -233,7 +233,7 @@ export const LandingPage: React.FC = () => {
       <section className="py-12 border-b border-subtle">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <Reveal>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 min-[360px]:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
             {[
               { metric: '10+ hrs', label: 'of weekly editing reclaimed per creator', accent: 'text-indigo-400' },
               { metric: '< 1 hr', label: 'from raw upload to fully captioned reels', accent: 'text-cyan-400' },

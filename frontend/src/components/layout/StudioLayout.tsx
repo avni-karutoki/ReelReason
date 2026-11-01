@@ -51,9 +51,9 @@ export const StudioLayout: React.FC<StudioLayoutProps> = ({ children }) => {
       }`}>
         
         {/* Sleek Top Studio Bar with Ambient Glow */}
-        <header className="h-14 sticky top-0 z-30 bg-surface-main/80 backdrop-blur-xl border-b border-subtle px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-4">
+        <header className="min-h-14 sticky top-0 z-30 bg-surface-main/80 backdrop-blur-xl border-b border-subtle px-2.5 sm:px-6 flex items-center justify-between gap-1.5 sm:gap-4">
           
-          <div className="min-w-0 flex items-center gap-2 sm:gap-3">
+          <div className="min-w-0 flex items-center gap-1.5 sm:gap-3">
             {/* Mobile Menu Hamburger */}
             <button
               onClick={() => setMobileMenuOpen(true)}
@@ -64,7 +64,7 @@ export const StudioLayout: React.FC<StudioLayoutProps> = ({ children }) => {
             </button>
 
             {/* Breadcrumb Context */}
-            <div className="flex items-center gap-2 text-xs">
+            <div className="min-w-0 flex items-center gap-2 text-xs">
               <span className="font-semibold text-main whitespace-nowrap">
                 Studio Workspace
               </span>
@@ -76,7 +76,7 @@ export const StudioLayout: React.FC<StudioLayoutProps> = ({ children }) => {
             </div>
           </div>
 
-          <div className="shrink-0 flex items-center gap-1.5 sm:gap-2.5">
+          <div className="shrink-0 flex items-center gap-1 sm:gap-2.5">
             {/* User status badge / Sign in button */}
             {!user || user.isGuest ? (
               <button
@@ -113,7 +113,7 @@ export const StudioLayout: React.FC<StudioLayoutProps> = ({ children }) => {
             {/* New Video CTA */}
             <Link
               to="/upload"
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 active:scale-[0.98] rounded-xl shadow-md shadow-indigo-500/25 transition-all whitespace-nowrap group cursor-pointer"
+              className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 active:scale-[0.98] rounded-xl shadow-md shadow-indigo-500/25 transition-all whitespace-nowrap group cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5] group-hover:rotate-90 transition-transform duration-200" />
               <span>New Video</span>

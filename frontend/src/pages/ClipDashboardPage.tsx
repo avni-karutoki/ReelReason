@@ -130,7 +130,7 @@ export const ClipDashboardPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8">
+    <div className="w-full min-w-0 max-w-7xl mx-auto space-y-6 sm:space-y-8">
       
       {/* Top Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-subtle">
@@ -201,7 +201,7 @@ export const ClipDashboardPage: React.FC = () => {
           </div>
 
           {/* Stat KPIs with Neon Accents */}
-          <div className="md:col-span-3 grid grid-cols-3 gap-2 text-center border-t md:border-t-0 md:border-l border-subtle pt-4 md:pt-0 md:pl-6">
+          <div className="md:col-span-3 grid grid-cols-1 min-[360px]:grid-cols-3 gap-2 text-center border-t md:border-t-0 md:border-l border-subtle pt-4 md:pt-0 md:pl-6">
             <div className="bg-surface-sub/60 p-3 rounded-xl border border-subtle">
               <span className="text-[10px] font-bold text-muted uppercase tracking-wider block font-mono">Discovered</span>
               <span className="text-xl font-black font-mono text-main tabular-nums">{clips.length}</span>

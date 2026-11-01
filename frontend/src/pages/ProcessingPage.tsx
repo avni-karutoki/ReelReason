@@ -199,7 +199,7 @@ export const ProcessingPage: React.FC = () => {
   const currentStep = PROCESSING_STEPS[currentStepIndex];
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8 py-4">
+    <div className="w-full min-w-0 max-w-3xl mx-auto space-y-6 sm:space-y-8 py-3 sm:py-4">
       
       {/* Header Badge & Title */}
       <div className="text-center space-y-2">
