@@ -42,6 +42,23 @@ Point the frontend at the backend with `VITE_API_URL` in `frontend/.env`
 (see `frontend/.env.example`). If the backend is unreachable, the studio runs in a
 fully client-side demo mode, so it never breaks.
 
+### Deploying the frontend to Vercel
+
+Set Vercel's project **Root Directory** to `frontend` and use the Vite defaults
+(`npm run build`, output directory `dist`). Add these environment variables in
+Vercel and redeploy:
+
+- `VITE_API_URL`: the public URL of the running FastAPI service (for example, the
+  Render service created from this repository's `render.yaml`). Without this,
+  the frontend intentionally stays in client-side demo mode.
+- `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`: required for real accounts.
+
+The Vercel rewrite in `frontend/vercel.json` sends direct links such as `/upload`
+and `/project/<id>/clips` to the React app. Configure the same frontend origin in
+the backend's `FRONTEND_URL` and `ALLOWED_ORIGINS`. Real processing also requires
+the backend's Supabase schema and storage buckets to be initialized; set its
+provider API keys for non-mock analysis/transcription.
+
 ### 3. Token & credential checklist (what makes it "real")
 
 | Token / credential | Where you get it | Used for | Files |
