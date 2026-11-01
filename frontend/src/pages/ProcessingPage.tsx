@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   Sparkles,
@@ -41,6 +41,7 @@ export const ProcessingPage: React.FC = () => {
 
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [progress, setProgress] = useState(12);
+  const progressRef = useRef(12);
   const [remainingSeconds, setRemainingSeconds] = useState(10);
   const [isError, setIsError] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -105,6 +106,7 @@ export const ProcessingPage: React.FC = () => {
       try {
         const status = await projectStatus(realBackendId);
         if (cancelled) return;
+        progressRef.current = status.progress_percentage;
         setProgress(status.progress_percentage);
         setCurrentStepIndex(Math.max(0, Math.min(7, backendStatusToStepIndex(status))));
         if (status.estimated_time_remaining_seconds !== null) {
@@ -147,30 +149,24 @@ export const ProcessingPage: React.FC = () => {
     const intervalSpeed = isFastForward ? 200 : 1000;
 
     const interval = setInterval(() => {
-      setProgress((prevProgress) => {
-        const nextProgress = prevProgress + (isFastForward ? 20 : 12);
+      const nextProgress = Math.min(100, progressRef.current + (isFastForward ? 20 : 12));
+      progressRef.current = nextProgress;
+      setProgress(nextProgress);
 
-        // Calculate step index based on progress
-        const stepIdx = Math.min(
-          PROCESSING_STEPS.length - 1,
-          Math.floor((nextProgress / 100) * PROCESSING_STEPS.length)
-        );
-        setCurrentStepIndex(stepIdx);
+      const stepIdx = Math.min(
+        PROCESSING_STEPS.length - 1,
+        Math.floor((nextProgress / 100) * PROCESSING_STEPS.length)
+      );
+      setCurrentStepIndex(stepIdx);
+      setRemainingSeconds((prevSec) => Math.max(0, prevSec - (isFastForward ? 3 : 1.3)));
 
-        // Update remaining seconds
-        setRemainingSeconds((prevSec) => Math.max(0, prevSec - (isFastForward ? 3 : 1.3)));
-
-        if (nextProgress >= 100) {
-          clearInterval(interval);
-          updateProject(project.id, { status: 'completed' });
-          setTimeout(() => {
-            navigate(`/project/${project.id}/clips`);
-          }, 350);
-          return 100;
-        }
-
-        return nextProgress;
-      });
+      if (nextProgress >= 100) {
+        clearInterval(interval);
+        updateProject(project.id, { status: 'completed' });
+        setTimeout(() => {
+          navigate(`/project/${project.id}/clips`);
+        }, 350);
+      }
     }, intervalSpeed);
 
     return () => clearInterval(interval);
@@ -343,6 +339,7 @@ export const ProcessingPage: React.FC = () => {
           <button
             type="button"
             onClick={async () => {
+              progressRef.current = 100;
               setProgress(100);
               updateProject(project.id, { status: 'completed' });
               navigate(`/project/${project.id}/clips`);

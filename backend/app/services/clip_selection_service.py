@@ -7,6 +7,7 @@ Applies strategic penalties, removes semantically duplicate ideas, and balances 
 from typing import List, Dict, Any, Set
 import logging
 import re
+from difflib import SequenceMatcher
 from app.utils.time_utils import parse_timestamp_to_seconds
 
 logger = logging.getLogger("reelreason.clip_selection")
@@ -104,18 +105,26 @@ class ClipSelectionService:
             candidate_tokens = self._extract_token_set(
                 f"{candidate.get('title', '')} {candidate.get('hook', '')} {candidate.get('reason', '')}"
             )
+            candidate_text = self._normalize_idea_text(
+                f"{candidate.get('title', '')} {candidate.get('hook', '')} {candidate.get('reason', '')}"
+            )
 
             is_duplicate = False
             for accepted in unique_clips:
                 accepted_tokens = self._extract_token_set(
                     f"{accepted.get('title', '')} {accepted.get('hook', '')} {accepted.get('reason', '')}"
                 )
+                accepted_text = self._normalize_idea_text(
+                    f"{accepted.get('title', '')} {accepted.get('hook', '')} {accepted.get('reason', '')}"
+                )
 
                 similarity = self._jaccard_similarity(candidate_tokens, accepted_tokens)
-                if similarity > 0.45:
+                paraphrase_similarity = SequenceMatcher(None, candidate_text, accepted_text).ratio()
+                if similarity > 0.45 or paraphrase_similarity >= 0.72:
                     logger.info(
                         f"Duplicate idea detected between '{candidate.get('title')}' and '{accepted.get('title')}' "
-                        f"(overlap {similarity:.2f}). Dropping lower-scoring clip."
+                        f"(token overlap {similarity:.2f}, text similarity {paraphrase_similarity:.2f}). "
+                        "Dropping lower-scoring clip."
                     )
                     is_duplicate = True
                     break
@@ -124,6 +133,10 @@ class ClipSelectionService:
                 unique_clips.append(candidate)
 
         return unique_clips
+
+    def _normalize_idea_text(self, text: str) -> str:
+        """Normalize whitespace and punctuation before comparing idea wording."""
+        return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
 
     def balance_diversity(
         self,
