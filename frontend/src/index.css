@@ -101,6 +101,24 @@
     overflow-x: clip;
   }
 
+  @media (max-width: 639px) {
+    #root :where(.flex, .inline-flex, .grid) > * {
+      min-width: 0;
+    }
+
+    #root :where(button, a, input, select, textarea, img, video, canvas, iframe) {
+      max-width: 100%;
+    }
+
+    #root .studio-card {
+      padding: 1rem;
+    }
+
+    #root :where(input, select, textarea) {
+      font-size: 16px;
+    }
+  }
+
   .font-mono, [data-tabular] {
     font-family: 'JetBrains Mono', monospace;
     font-variant-numeric: tabular-nums;
