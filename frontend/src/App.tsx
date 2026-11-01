@@ -32,10 +32,10 @@ const ScrollToTop = () => {
 // Marketing Layout for Landing Page
 const MarketingLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
-    <div className="min-h-screen flex flex-col bg-canvas text-main font-sans selection:bg-indigo-500/20 selection:text-indigo-600 dark:selection:text-indigo-300 transition-colors duration-200">
+    <div className="w-full min-w-0 min-h-screen flex flex-col overflow-x-clip bg-canvas text-main font-sans selection:bg-indigo-500/20 selection:text-indigo-600 dark:selection:text-indigo-300 transition-colors duration-200">
       <Navbar />
-      <main className="flex-1">
-        <PageFade>
+      <main className="w-full min-w-0 flex-1">
+        <PageFade className="w-full min-w-0">
           {children}
         </PageFade>
       </main>

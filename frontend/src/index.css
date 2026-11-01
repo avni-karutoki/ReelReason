@@ -71,6 +71,17 @@
     border-color: var(--border);
   }
 
+  html,
+  body,
+  #root {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  html {
+    overflow-x: clip;
+  }
+
   body {
     background-color: var(--background);
     color: var(--text-primary);
@@ -79,7 +90,15 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: clip;
     transition: background-color 200ms ease, color 200ms ease;
+  }
+
+  #root {
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: clip;
   }
 
   .font-mono, [data-tabular] {

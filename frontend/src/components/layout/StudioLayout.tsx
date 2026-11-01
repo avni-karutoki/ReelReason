@@ -37,7 +37,7 @@ export const StudioLayout: React.FC<StudioLayoutProps> = ({ children }) => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-canvas text-main flex transition-colors duration-200">
+    <div className="w-full min-w-0 min-h-screen bg-canvas text-main flex overflow-x-clip transition-colors duration-200">
       
       {/* Studio Sidebar */}
       <Sidebar
@@ -51,9 +51,9 @@ export const StudioLayout: React.FC<StudioLayoutProps> = ({ children }) => {
       }`}>
         
         {/* Sleek Top Studio Bar with Ambient Glow */}
-        <header className="h-14 sticky top-0 z-30 bg-surface-main/80 backdrop-blur-xl border-b border-subtle px-4 sm:px-6 flex items-center justify-between gap-4">
+        <header className="h-14 sticky top-0 z-30 bg-surface-main/80 backdrop-blur-xl border-b border-subtle px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-4">
           
-          <div className="flex items-center gap-3">
+          <div className="min-w-0 flex items-center gap-2 sm:gap-3">
             {/* Mobile Menu Hamburger */}
             <button
               onClick={() => setMobileMenuOpen(true)}
@@ -65,18 +65,18 @@ export const StudioLayout: React.FC<StudioLayoutProps> = ({ children }) => {
 
             {/* Breadcrumb Context */}
             <div className="flex items-center gap-2 text-xs">
-              <span className="font-semibold text-main">
+              <span className="font-semibold text-main whitespace-nowrap">
                 Studio Workspace
               </span>
-              <span className="text-sub">/</span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-mono text-[10px] font-bold uppercase tracking-wider">
+              <span className="hidden sm:inline text-sub">/</span>
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-mono text-[10px] font-bold uppercase tracking-wider">
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
                 Live Demo Mode
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="shrink-0 flex items-center gap-1.5 sm:gap-2.5">
             {/* User status badge / Sign in button */}
             {!user || user.isGuest ? (
               <button
@@ -123,8 +123,8 @@ export const StudioLayout: React.FC<StudioLayoutProps> = ({ children }) => {
         </header>
 
         {/* Content Children */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">
-          <PageFade>
+        <main className="w-full min-w-0 flex-1 p-3 sm:p-6 lg:p-8">
+          <PageFade className="w-full min-w-0">
             {children}
           </PageFade>
         </main>
