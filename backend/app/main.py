@@ -13,6 +13,10 @@ from fastapi.exceptions import RequestValidationError
 
 from app.config import settings
 from app.routes import projects, transcripts, clips, reels, feedback, users
+from app.services.transcription_service import (
+    get_transcription_provider_name,
+    is_transcription_provider_ready,
+)
 from app.utils.ffmpeg_paths import ensure_ffmpeg_on_path
 
 # Configure Structured Logging
@@ -127,7 +131,8 @@ async def health_check():
         "status": "healthy",
         "mock_mode": settings.is_mock_mode,
         "ai_provider": settings.AI_PROVIDER,
-        "transcription_provider": settings.TRANSCRIPTION_PROVIDER
+        "transcription_provider": get_transcription_provider_name(),
+        "transcription_ready": is_transcription_provider_ready(),
     }
 
 

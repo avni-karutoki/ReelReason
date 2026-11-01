@@ -5,7 +5,7 @@ and Demo/Mock transcription with word-level timestamps.
 """
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Tuple
-import base64
+import asyncio
 import os
 import json
 import logging
@@ -203,12 +203,13 @@ class GeminiTranscriptionProvider(TranscriptionProvider):
     Gemini surface that returns word-level time alignments (word_info
     annotations with second-based string offsets like "0.400s").
 
-    Audio stays fully inline as base64; files above the 20 MB inline cap are
-    rejected with guidance rather than silently malformed.
+    Audio is uploaded with Gemini's resumable Files API and passed to the
+    Interactions API by URI. Temporary provider-side copies are deleted after
+    each interaction.
     """
 
     ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions"
-    INLINE_AUDIO_LIMIT_BYTES = 20 * 1024 * 1024
+    FILES_ENDPOINT = "https://generativelanguage.googleapis.com/upload/v1beta/files"
     _MIME_BY_EXT = {
         ".mp3": "audio/mp3",
         ".wav": "audio/wav",
@@ -226,30 +227,43 @@ class GeminiTranscriptionProvider(TranscriptionProvider):
             raise ValueError("GEMINI_API_KEY is not configured")
 
         model = settings.GEMINI_TRANSCRIBE_MODEL or "gemini-3.5-transcribe"
-        audio_part = self._build_audio_part(audio_file_path)
-
-        payload = {
-            "model": model,
-            "input": [{
-                "type": "user_input",
-                "content": [audio_part],
-            }],
-            "generation_config": {
-                "transcription_config": {
-                    "mode": {
-                        "type": "verbatim",
-                        "timestamp_granularities": ["word", "utterance"],
-                    }
-                }
-            },
+        mime_type = self._mime_type(audio_file_path)
+        file_name: Optional[str] = None
+        language_codes = {
+            "english": ["en-US"],
+            "hindi": ["hi-IN"],
+        }.get(language.strip().lower(), [])
+        transcription_config: Dict[str, Any] = {
+            "mode": {
+                "type": "verbatim",
+                "timestamp_granularities": ["word"],
+            }
         }
-        headers = {"x-goog-api-key": settings.GEMINI_API_KEY}
+        if language_codes:
+            transcription_config["language_codes"] = language_codes
 
         async with httpx.AsyncClient(timeout=600.0) as client:
-            resp = await client.post(self.ENDPOINT, headers=headers, json=payload)
-            if resp.status_code != 200:
-                raise RuntimeError(f"Gemini transcription API error: {resp.text}")
-            data = resp.json()
+            try:
+                file_uri, file_name = await self._upload_audio(client, audio_file_path, mime_type)
+                payload = {
+                    "model": model,
+                    "input": [{"type": "audio", "uri": file_uri, "mime_type": mime_type}],
+                    "generation_config": {
+                        "transcription_config": transcription_config,
+                    },
+                    "store": False,
+                }
+                resp = await client.post(
+                    self.ENDPOINT,
+                    headers={"x-goog-api-key": settings.GEMINI_API_KEY},
+                    json=payload,
+                )
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Gemini transcription API error: {resp.text}")
+                data = resp.json()
+            finally:
+                if file_name:
+                    await self._delete_uploaded_file(client, file_name)
 
         text, annotations = self._extract_output(data)
 
@@ -267,6 +281,9 @@ class GeminiTranscriptionProvider(TranscriptionProvider):
                 "end": round(end, 2),
             })
 
+        if not text.strip():
+            raise RuntimeError("Gemini transcription returned no transcript text")
+
         segments = self._build_segments(text, words, annotations)
 
         return {
@@ -278,19 +295,74 @@ class GeminiTranscriptionProvider(TranscriptionProvider):
             "raw_response": data,
         }
 
-    def _build_audio_part(self, audio_file_path: str) -> Dict[str, Any]:
+    async def _upload_audio(
+        self,
+        client: httpx.AsyncClient,
+        audio_file_path: str,
+        mime_type: str,
+    ) -> Tuple[str, str]:
         size = os.path.getsize(audio_file_path)
-        if size > self.INLINE_AUDIO_LIMIT_BYTES:
-            raise ValueError(
-                f"Audio file is {size / (1024 * 1024):.1f} MB; Gemini inline audio "
-                "accepts at most 20 MB. Extract a smaller speech track (lower bitrate "
-                "or mono 16 kHz) before transcribing this file."
+        start = await client.post(
+            self.FILES_ENDPOINT,
+            headers={
+                "x-goog-api-key": settings.GEMINI_API_KEY or "",
+                "X-Goog-Upload-Protocol": "resumable",
+                "X-Goog-Upload-Command": "start",
+                "X-Goog-Upload-Header-Content-Length": str(size),
+                "X-Goog-Upload-Header-Content-Type": mime_type,
+            },
+            json={"file": {"display_name": os.path.basename(audio_file_path)}},
+        )
+        if start.status_code not in (200, 201):
+            raise RuntimeError(f"Gemini file upload could not start: {start.text}")
+
+        upload_url = start.headers.get("x-goog-upload-url")
+        if not upload_url:
+            raise RuntimeError("Gemini file upload did not return an upload URL")
+
+        async def file_chunks():
+            with open(audio_file_path, "rb") as audio_file:
+                while True:
+                    chunk = await asyncio.to_thread(audio_file.read, 1024 * 1024)
+                    if not chunk:
+                        break
+                    yield chunk
+
+        upload = await client.post(
+            upload_url,
+            headers={
+                "Content-Length": str(size),
+                "X-Goog-Upload-Offset": "0",
+                "X-Goog-Upload-Command": "upload, finalize",
+            },
+            content=file_chunks(),
+        )
+        if upload.status_code not in (200, 201):
+            raise RuntimeError(f"Gemini audio upload failed: {upload.text}")
+
+        uploaded_file = upload.json().get("file", {})
+        file_uri = uploaded_file.get("uri")
+        file_name = uploaded_file.get("name")
+        if not file_uri or not file_name:
+            if file_name:
+                await self._delete_uploaded_file(client, file_name)
+            raise RuntimeError("Gemini audio upload returned an incomplete file record")
+        return file_uri, file_name
+
+    async def _delete_uploaded_file(self, client: httpx.AsyncClient, file_name: str) -> None:
+        try:
+            response = await client.delete(
+                f"https://generativelanguage.googleapis.com/v1beta/{file_name}",
+                headers={"x-goog-api-key": settings.GEMINI_API_KEY or ""},
             )
+            if response.status_code not in (200, 204):
+                logger.warning("Gemini temporary audio cleanup returned HTTP %s", response.status_code)
+        except Exception as exc:
+            logger.warning("Gemini temporary audio cleanup failed: %s", exc)
+
+    def _mime_type(self, audio_file_path: str) -> str:
         ext = os.path.splitext(audio_file_path)[1].lower()
-        mime = self._MIME_BY_EXT.get(ext, "audio/mp3")
-        with open(audio_file_path, "rb") as f:
-            encoded = base64.b64encode(f.read()).decode("ascii")
-        return {"type": "audio", "mime_type": mime, "data": encoded}
+        return self._MIME_BY_EXT.get(ext, "audio/mp3")
 
     def _extract_output(self, data: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
         text = ""
@@ -356,8 +428,10 @@ class GeminiTranscriptionProvider(TranscriptionProvider):
 
 
 def get_transcription_service() -> TranscriptionProvider:
-    provider = settings.TRANSCRIPTION_PROVIDER.lower()
-    if settings.is_mock_mode or provider == "mock":
+    provider = get_transcription_provider_name()
+    if provider == "gemini" and settings.TRANSCRIPTION_PROVIDER.strip().lower() == "mock":
+        logger.warning("Using Gemini transcription in production instead of a mock transcription setting")
+    if provider == "mock":
         return MockTranscriptionProvider()
     elif provider == "gemini":
         return GeminiTranscriptionProvider()
@@ -365,4 +439,29 @@ def get_transcription_service() -> TranscriptionProvider:
         return OpenAIWhisperProvider()
     elif provider == "assemblyai":
         return AssemblyAIProvider()
-    return MockTranscriptionProvider()
+    raise ValueError(f"Unsupported transcription provider: {provider}")
+
+
+def get_transcription_provider_name() -> str:
+    """Resolve the provider, preventing production Gemini deployments from silently mocking."""
+    configured = settings.TRANSCRIPTION_PROVIDER.strip().lower()
+    if settings.is_mock_mode:
+        return "mock"
+    if (
+        configured == "mock"
+        and settings.ENVIRONMENT.lower() == "production"
+        and settings.AI_PROVIDER.lower() == "gemini"
+    ):
+        return "gemini"
+    return configured
+
+
+def is_transcription_provider_ready() -> bool:
+    provider = get_transcription_provider_name()
+    if provider == "gemini":
+        return bool(settings.GEMINI_API_KEY)
+    if provider == "openai":
+        return bool(settings.OPENAI_API_KEY)
+    if provider == "assemblyai":
+        return bool(settings.ASSEMBLYAI_API_KEY)
+    return False
