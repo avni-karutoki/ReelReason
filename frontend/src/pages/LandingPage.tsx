@@ -1,74 +1,24 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import {
   Sparkles,
   ArrowRight,
   CheckCircle2,
   Play,
-  Scissors,
-  Eye,
-  Sliders,
-  Share2,
-  FileText,
-  Clock,
-  Layers,
   ChevronRight,
-  TrendingUp,
-  Award,
-  Zap,
-  Flame,
-  Check,
-  ShieldCheck,
-  Cpu,
   Instagram,
   Youtube,
   Facebook,
   Linkedin,
-  User,
+  Activity,
+  Clock,
   LogIn
 } from 'lucide-react';
-import { HERO_PODCAST_IMG, THUMB_KEYNOTE_IMG, THUMB_TUTORIAL_IMG } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
 import { Reveal, StaggerGroup, StaggerItem } from '../components/common/Reveal';
 
 export const LandingPage: React.FC = () => {
   const { user, openAuthModal, loginAsGuest } = useAuth();
-  const [selectedDemoTab, setSelectedDemoTab] = useState<'podcast' | 'keynote' | 'tutorial'>('podcast');
-
-  const demoData = {
-    podcast: {
-      title: "Episode 42: Building Deep Moats in 2026",
-      sourceDuration: "48:20",
-      img: HERO_PODCAST_IMG,
-      clipTitle: "Why Most Creators Overlook The Single Metric That Matters",
-      hook: "Most creators spend 40 hours editing, but fail because they miss this one rule.",
-      score: 96,
-      category: "Contrarian Insight",
-      reason: "Direct thesis, sharp emotional stake, instant 2.1s retention trigger"
-    },
-    keynote: {
-      title: "Keynote: Architecture of Sovereign AI Models",
-      sourceDuration: "36:15",
-      img: THUMB_KEYNOTE_IMG,
-      clipTitle: "Why Edge Inference Beats Cloud Latency Every Time",
-      hook: "If your model requires round-trip server roundtrips, you're building 2022 software.",
-      score: 93,
-      category: "Technical Breakthrough",
-      reason: "Contrarian engineering stance that commands developer authority"
-    },
-    tutorial: {
-      title: "Masterclass: High-Retention Video Typography",
-      sourceDuration: "24:50",
-      img: THUMB_TUTORIAL_IMG,
-      clipTitle: "The 3-Word Subtitle Rule for 80%+ Retention",
-      hook: "Never show more than 4 words on screen at once. Here's the psychological reason why.",
-      score: 98,
-      category: "Actionable Framework",
-      reason: "Immediate, testable visual advice with high bookmark probability"
-    }
-  };
-
-  const activeDemo = demoData[selectedDemoTab];
 
   return (
     <div className="min-h-screen bg-canvas text-main transition-colors duration-200 overflow-hidden">
@@ -182,107 +132,95 @@ export const LandingPage: React.FC = () => {
               </Reveal>
             </div>
 
-            {/* Right Column: Interactive Studio Preview Mockup */}
+            {/* Right Column: Explainable analysis preview */}
             <div className="lg:col-span-5 relative">
               <Reveal delay={0.25} y={28} scale={0.97}>
-              {/* Demo selector tabs */}
-              <div className="flex items-center justify-center gap-2 mb-3">
-                <button
-                  onClick={() => setSelectedDemoTab('podcast')}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                    selectedDemoTab === 'podcast'
-                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                      : 'text-sub hover:text-main'
-                  }`}
-                >
-                  Podcast
-                </button>
-                <button
-                  onClick={() => setSelectedDemoTab('keynote')}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                    selectedDemoTab === 'keynote'
-                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                      : 'text-sub hover:text-main'
-                  }`}
-                >
-                  Keynote
-                </button>
-                <button
-                  onClick={() => setSelectedDemoTab('tutorial')}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                    selectedDemoTab === 'tutorial'
-                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                      : 'text-sub hover:text-main'
-                  }`}
-                >
-                  Tutorial
-                </button>
-              </div>
-
-              {/* Preview Window Card with Glowing Rim */}
-              <div className="relative mx-auto max-w-md lg:max-w-none rounded-2xl bg-surface-main p-4 border border-subtle shadow-2xl transition-all duration-300 hover:border-indigo-500/40 hover:shadow-[0_0_35px_rgba(99,102,241,0.2)]">
-                
-                {/* Header of preview window */}
-                <div className="flex items-center justify-between pb-3 mb-3 border-b border-subtle text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-                    <span className="font-bold text-main font-sans truncate max-w-[200px]">
-                      {activeDemo.title}
-                    </span>
-                  </div>
-                  <span className="font-mono text-muted text-[11px]">{activeDemo.sourceDuration} source</span>
-                </div>
-
-                {/* Simulated vertical reel showcase card */}
-                <div className="relative aspect-16/10 rounded-xl overflow-hidden border border-subtle mb-3 group">
-                  <img
-                    src={activeDemo.img}
-                    alt={activeDemo.title}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-black/20 flex flex-col justify-end p-4 text-white">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-cyan-400 text-black text-[10px] font-mono font-extrabold uppercase tracking-wide">
-                        <Flame className="w-3 h-3 fill-current" />
-                        Score: {activeDemo.score}/100
-                      </span>
-                      <span className="text-[10px] bg-black/60 backdrop-blur-md px-2 py-0.5 rounded text-white/90 border border-white/10 font-mono">
-                        {activeDemo.category}
+                <div className="relative mx-auto max-w-md lg:max-w-none">
+                  <div className="absolute -inset-4 rounded-[2rem] bg-gradient-to-br from-indigo-500/20 via-violet-500/10 to-cyan-400/15 blur-2xl" />
+                  <div className="relative rounded-3xl bg-surface-main p-5 sm:p-6 border border-subtle shadow-2xl">
+                    <div className="flex items-start justify-between gap-4 pb-5 border-b border-subtle">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-500/15 text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-500/20">
+                          <Activity className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-main">Moment intelligence</p>
+                          <p className="text-[11px] text-sub mt-0.5">A clear reason behind every pick</p>
+                        </div>
+                      </div>
+                      <span className="shrink-0 px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-mono font-bold uppercase tracking-wide">
+                        Analysis ready
                       </span>
                     </div>
-                    <p className="text-xs sm:text-sm font-bold font-sans leading-snug text-white line-clamp-2">
-                      "{activeDemo.hook}"
-                    </p>
+
+                    <div className="mt-5 p-4 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-violet-500/5 border border-indigo-500/20">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[10px] text-cyan-400 font-mono font-bold uppercase tracking-wider">Top recommendation</p>
+                          <h3 className="text-base sm:text-lg font-bold text-main mt-1 leading-snug">The 3-question test before you post</h3>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <span className="block text-2xl font-black font-mono text-cyan-300 leading-none">96</span>
+                          <span className="text-[9px] text-sub font-mono">/ 100</span>
+                        </div>
+                      </div>
+                      <p className="mt-3 text-xs text-sub leading-relaxed">
+                        A curiosity-led opening, a complete takeaway, and a clear reason to share.
+                      </p>
+                    </div>
+
+                    <div className="mt-5 space-y-3">
+                      <div className="flex items-center justify-between gap-3 text-[11px]">
+                        <span className="font-semibold text-main">Why this moment works</span>
+                        <span className="text-sub font-mono shrink-0">3 signals</span>
+                      </div>
+                      {[
+                        { label: 'Hook strength', score: 97, color: 'from-amber-400 to-orange-400' },
+                        { label: 'Story clarity', score: 92, color: 'from-cyan-400 to-blue-400' },
+                        { label: 'Audience fit', score: 94, color: 'from-indigo-400 to-violet-400' },
+                      ].map((signal) => (
+                        <div key={signal.label} className="grid grid-cols-[5.5rem_1fr_2rem] items-center gap-2 text-[10px]">
+                          <span className="text-sub">{signal.label}</span>
+                          <div className="h-1.5 rounded-full bg-surface-ter overflow-hidden">
+                            <div className={`h-full rounded-full bg-gradient-to-r ${signal.color}`} style={{ width: `${signal.score}%` }} />
+                          </div>
+                          <span className="text-main font-mono text-right">{signal.score}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-5 pt-4 border-t border-subtle">
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <span className="text-[11px] font-bold text-main">Recommended moments</span>
+                        <span className="text-[10px] text-sub font-mono">3 of 8 ranked</span>
+                      </div>
+                      <div className="space-y-2">
+                        {[
+                          { time: '00:42', title: 'A counter-intuitive lesson', score: 96 },
+                          { time: '01:18', title: 'The founder’s turning point', score: 91 },
+                          { time: '02:46', title: 'One practical editing rule', score: 88 },
+                        ].map((moment, index) => (
+                          <div key={moment.time} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-surface-sub/60 border border-subtle">
+                            <span className="w-6 h-6 rounded-lg bg-indigo-500/10 text-indigo-300 flex items-center justify-center text-[9px] font-mono font-bold shrink-0">0{index + 1}</span>
+                            <span className="text-[10px] text-sub font-mono shrink-0">{moment.time}</span>
+                            <span className="text-[11px] text-main truncate flex-1 min-w-0">{moment.title}</span>
+                            <span className="text-[10px] text-cyan-300 font-mono font-bold shrink-0">{moment.score}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between gap-3 p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/15">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                        <span className="text-[10px] text-sub truncate">Hours of footage, ranked with context</span>
+                      </div>
+                      <Link to="/upload" className="text-cyan-400 hover:underline shrink-0 text-[11px] font-semibold inline-flex items-center gap-1">
+                        Try now <ChevronRight className="w-3.5 h-3.5" />
+                      </Link>
+                    </div>
                   </div>
                 </div>
-
-                {/* Score breakdown strip */}
-                <div className="grid grid-cols-3 gap-2 bg-surface-sub/60 p-2.5 rounded-xl border border-subtle text-center text-xs">
-                  <div>
-                    <span className="text-[10px] text-muted block font-mono">Hook Power</span>
-                    <span className="font-mono font-bold text-amber-400">97%</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-muted block font-mono">Story Clarity</span>
-                    <span className="font-mono font-bold text-cyan-400">92%</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-muted block font-mono">Virality Index</span>
-                    <span className="font-mono font-bold text-indigo-400">94%</span>
-                  </div>
-                </div>
-
-                {/* Why Reasoning Teaser */}
-                <div className="mt-3 p-3 bg-indigo-500/10 rounded-xl border border-indigo-500/25 text-xs text-main flex items-center justify-between">
-                  <span className="text-indigo-200/90 truncate mr-2">
-                    <strong className="text-cyan-300">Selection Logic:</strong> {activeDemo.reason}
-                  </span>
-                  <Link to="/upload" className="text-cyan-400 hover:underline shrink-0 text-[11px] font-semibold flex items-center gap-1">
-                    Try Now <ChevronRight className="w-3.5 h-3.5" />
-                  </Link>
-                </div>
-
-              </div>
               </Reveal>
             </div>
 
