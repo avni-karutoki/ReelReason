@@ -6,7 +6,7 @@ import os
 import uuid
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File, Form, Request
 from datetime import datetime
 
 from app.config import settings
@@ -40,6 +40,7 @@ STATUS_PROGRESS_MAP = {
 
 @router.post("", response_model=APIResponse[ProjectResponse], status_code=status.HTTP_201_CREATED)
 async def create_project(
+    request: Request,
     background_tasks: BackgroundTasks,
     # Support both JSON payload and multipart form data
     source_type: str = Form(default="youtube"),
@@ -58,8 +59,27 @@ async def create_project(
 ):
     """
     Creates a new video project and initiates non-blocking background processing via BackgroundTasks.
-    Accepts direct video upload or YouTube URL.
+    Accepts direct video upload or YouTube URL. Both application/json and multipart/form-data bodies work.
     """
+    # JSON bodies bind Form defaults to every field (FastAPI behavior), which
+    # silently produced "A valid YouTube URL is required" for API clients that
+    # send JSON. Honor the JSON payload explicitly when it is present.
+    if request.headers.get("content-type", "").startswith("application/json"):
+        try:
+            json_body = await request.json()
+        except Exception:
+            json_body = None
+        if isinstance(json_body, dict) and json_body:
+            source_type = str(json_body.get("source_type", "youtube"))
+            source_url = json_body.get("source_url")
+            title = json_body.get("title")
+            platform = json_body.get("platform", platform)
+            audience = json_body.get("audience", audience)
+            goal = json_body.get("goal", goal)
+            tone = json_body.get("tone", tone)
+            number_of_clips = int(json_body.get("number_of_clips", 3))
+            language = json_body.get("language", language)
+            auto_analyze = bool(json_body.get("auto_analyze", True))
     user_id = current_user["id"]
     project_id = str(uuid.uuid4())
 
