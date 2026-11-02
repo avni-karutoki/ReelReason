@@ -120,7 +120,9 @@ export const ProcessingPage: React.FC = () => {
           if (!cancelled) {
             setIsError(true);
             console.error('Pipeline failed:', status.error_message);
-            toast.error(`Pipeline failed: ${status.error_message || 'unknown error'}`);
+            const msg = status.error_message || 'unknown error';
+            const display = msg.startsWith('Pipeline failed:') ? msg : `Pipeline failed: ${msg}`;
+            toast.error(display);
           }
         }
       } catch (e) {

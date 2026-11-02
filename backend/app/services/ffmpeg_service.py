@@ -14,6 +14,37 @@ from app.utils.ffmpeg_paths import resolve_binary, ensure_ffmpeg_on_path
 
 logger = logging.getLogger("reelreason.ffmpeg_service")
 
+_UNAVAILABLE_PATTERNS = (
+    "video unavailable",
+    "private video",
+    "has been removed",
+    "does not exist",
+    "sign in to confirm your age",
+    "age-restricted",
+    "members-only",
+    "this video is not available",
+    "went is-private",
+    "account associated with this video",
+)
+
+_BOTCHECK_PATTERNS = (
+    "sign in to confirm",
+    "not a bot",
+    "please sign in",
+)
+
+
+def _is_video_unavailable(err: Exception) -> bool:
+    text = str(err).lower()
+    return any(p in text for p in _UNAVAILABLE_PATTERNS)
+
+
+def _friendly_unavailable_error(youtube_url: str) -> str:
+    return (
+        f"This YouTube video is unavailable (deleted, private, age-restricted or region-locked): "
+        f"{youtube_url}. Please double-check the link, or upload the video file directly on the Upload page."
+    )
+
 
 class FFmpegService:
     def __init__(self):
@@ -48,36 +79,58 @@ class FFmpegService:
             }
 
         # 1. Try python yt_dlp module if installed
+        # Client rotation helps on cloud/datacenter IPs where YouTube serves
+        # bot-check pages to the default web client.
+        _ydl_base_opts = {
+            "format": "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best",
+            "outtmpl": output_template,
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "socket_timeout": 20,
+            "retries": 3,
+            "geo_bypass": True,
+        }
         try:
             import yt_dlp
-            ydl_opts = {
-                "format": "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best",
-                "outtmpl": output_template,
-                "quiet": True,
-                "no_warnings": True,
-                "noplaylist": True,
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(youtube_url, download=True)
-                video_id = info.get("id", "yt_video")
-                title = info.get("title", "YouTube Video")
-                duration = int(info.get("duration", 0))
-                filename = ydl.prepare_filename(info)
-                
-                # If merged format has different extension, check on disk
-                if not os.path.exists(filename):
-                    candidate = os.path.join(target_dir, f"{video_id}.mp4")
-                    if os.path.exists(candidate):
-                        filename = candidate
+            last_error: Optional[Exception] = None
+            for clients in (None, ["ios", "tv", "web_safari"], ["android"]):
+                ydl_opts = dict(_ydl_base_opts)
+                if clients:
+                    ydl_opts["extractor_args"] = {"youtube": {"player_client": clients}}
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(youtube_url, download=True)
+                    video_id = info.get("id", "yt_video")
+                    title = info.get("title", "YouTube Video")
+                    duration = int(info.get("duration", 0))
+                    filename = ydl.prepare_filename(info)
 
-                return {
-                    "video_path": filename,
-                    "title": title,
-                    "duration_seconds": duration,
-                    "video_id": video_id
-                }
+                    # If merged format has different extension, check on disk
+                    if not os.path.exists(filename):
+                        candidate = os.path.join(target_dir, f"{video_id}.mp4")
+                        if os.path.exists(candidate):
+                            filename = candidate
+
+                    return {
+                        "video_path": filename,
+                        "title": title,
+                        "duration_seconds": duration,
+                        "video_id": video_id
+                    }
+                except Exception as attempt_err:
+                    last_error = attempt_err
+                    if _is_video_unavailable(attempt_err):
+                        # No point rotating clients: the video itself is gone/private.
+                        break
+                    continue
+            if last_error and _is_video_unavailable(last_error):
+                raise RuntimeError(_friendly_unavailable_error(youtube_url))
+            raise last_error or RuntimeError("yt-dlp failed for an unknown reason")
         except ImportError:
             logger.info("yt_dlp python package not directly imported, attempting yt-dlp CLI subprocess")
+        except RuntimeError:
+            raise
         except Exception as e:
             logger.warning(f"yt_dlp library download error: {e}. Falling back to CLI subprocess.")
 
@@ -106,12 +159,33 @@ class FFmpegService:
                     "video_id": "yt_cli_downloaded"
                 }
             raise FileNotFoundError("Could not find downloaded video file after yt-dlp execution.")
-        except Exception as cli_err:
-            logger.error(f"yt-dlp CLI failed: {cli_err}")
+        except subprocess.CalledProcessError as cli_err:
+            stderr_tail = (cli_err.stderr or "")[-400:].strip()
+            logger.error(f"yt-dlp CLI failed (code {cli_err.returncode}): {stderr_tail}")
             # In real mode a failed download must fail loudly: fabricating a mock
             # file would silently poison extraction, transcription, and clips.
             if not settings.is_mock_mode:
-                raise RuntimeError(f"yt-dlp download failed: {cli_err}")
+                if _is_video_unavailable(stderr_tail):
+                    raise RuntimeError(_friendly_unavailable_error(youtube_url)) from None
+                if any(p in stderr_tail.lower() for p in _BOTCHECK_PATTERNS):
+                    raise RuntimeError(
+                        "YouTube is asking this cloud server to sign in (bot protection on datacenter IPs). "
+                        "Please upload the video file directly on the Upload page — uploads are not affected."
+                    ) from None
+                raise RuntimeError(f"YouTube download failed: {stderr_tail or cli_err}") from None
+            mock_video_path = os.path.join(target_dir, "sample_podcast.mp4")
+            with open(mock_video_path, "wb") as f:
+                f.write(b"MOCK_FALLBACK_VIDEO_REELREASON")
+            return {
+                "video_path": mock_video_path,
+                "title": "Short-Form Video Masterclass (Demo)",
+                "duration_seconds": 360,
+                "video_id": "demo_video"
+            }
+        except Exception as cli_err:
+            logger.error(f"yt-dlp CLI failed: {cli_err}")
+            if not settings.is_mock_mode:
+                raise RuntimeError(f"YouTube download failed: {str(cli_err)[:300]}") from None
             mock_video_path = os.path.join(target_dir, "sample_podcast.mp4")
             with open(mock_video_path, "wb") as f:
                 f.write(b"MOCK_FALLBACK_VIDEO_REELREASON")
