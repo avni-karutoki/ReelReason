@@ -86,7 +86,17 @@ class PipelineService:
                 }).eq("id", project_id).execute())
 
             # Step 4-6: Extract audio using FFmpeg
-            await self._update_status(project_id, "extracting_audio", "Extracting high-fidelity speech audio track via FFmpeg")
+            await self._update_status(project_id, "extracting_audio", "Fetching source video and extracting speech audio via FFmpeg")
+
+            # Uploaded projects persist video_path as a Supabase Storage URL; FFmpeg
+            # subprocesses need a real local file, so materialize it here first.
+            if local_video_path and local_video_path.startswith(("http://", "https://")):
+                local_video_path = await _offload(
+                    storage_service.download_source_video,
+                    local_video_path,
+                    f"{project_id}.mp4"
+                )
+
             audio_filename = f"{project_id}_audio.mp3"
             local_audio_path = os.path.join(settings.TEMP_DIR, audio_filename)
 

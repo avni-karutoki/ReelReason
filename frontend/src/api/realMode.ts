@@ -9,24 +9,43 @@ const REGISTRY_KEY = 'reelreason_real_projects_v1';
 
 let availability: boolean | null = null;
 let probePromise: Promise<boolean> | null = null;
+/** Timestamp of the last failed probe; failures are retried after a short backoff (cold starts). */
+let lastFailureAt = 0;
+const FAILURE_BACKOFF_MS = 20_000;
 
 /** True once a probe has succeeded (cached for the session). */
 export function isBackendConfirmed(): boolean | null {
   return availability;
 }
 
-/** Probe the backend once; result is cached in-memory for the session. */
+/**
+ * Probe the backend. True results are cached for the session; false results are
+ * retried after a short backoff so a Render free-tier cold start (>30s wake-up)
+ * still eventually flips the studio into real mode.
+ */
 export async function ensureBackendProbed(probeFn: () => Promise<boolean>): Promise<boolean> {
-  if (availability !== null) return availability;
+  if (availability === true) return true;
+  if (availability === false && Date.now() - lastFailureAt < FAILURE_BACKOFF_MS) {
+    return false;
+  }
   if (!probePromise) {
     probePromise = probeFn()
       .then((ok) => {
-        availability = ok;
+        if (ok) {
+          availability = true;
+        } else {
+          availability = false;
+          lastFailureAt = Date.now();
+        }
         return ok;
       })
       .catch(() => {
         availability = false;
+        lastFailureAt = Date.now();
         return false;
+      })
+      .finally(() => {
+        probePromise = null;
       });
   }
   return probePromise;

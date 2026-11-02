@@ -1,10 +1,11 @@
 """
 Supabase Storage service for managing video, audio, rendered reels, and thumbnails.
-Provides file upload, signed URL generation, and storage cleanup.
+Provides file upload, signed URL generation, storage cleanup, and local source resolution.
 """
 import os
 import shutil
 import logging
+import httpx
 from typing import Optional
 from app.config import settings
 from app.services.supabase_service import supabase_service
@@ -51,6 +52,30 @@ class StorageService:
         except Exception as e:
             logger.warning(f"Storage upload exception: {e}. Generating standardized storage path URL.")
             return f"{settings.SUPABASE_URL}/storage/v1/object/public/{bucket_name}/{destination_path}"
+
+    def download_source_video(self, source_url: str, filename: str) -> str:
+        """
+        Downloads a remote video (e.g. a Supabase Storage public URL) into TEMP_DIR
+        and returns the local path. FFmpeg/ffprobe subprocesses require a real file
+        on disk; uploaded projects persist video_path as a Storage URL, so the
+        pipeline must materialize it locally before extraction/rendering.
+        Uses a stable Project-scoped filename and caches across pipeline retries.
+        """
+        destination = os.path.join(settings.TEMP_DIR, filename)
+        if os.path.exists(destination) and os.path.getsize(destination) > 100_000:
+            return destination
+
+        os.makedirs(settings.TEMP_DIR, exist_ok=True)
+        tmp_download = destination + ".part"
+        with httpx.Client(timeout=None, follow_redirects=True) as client:
+            with client.stream("GET", source_url) as resp:
+                resp.raise_for_status()
+                with open(tmp_download, "wb") as f:
+                    for chunk in resp.iter_bytes(chunk_size=1 << 20):
+                        f.write(chunk)
+        os.replace(tmp_download, destination)
+        logger.info(f"Downloaded source video {source_url} -> {destination} ({os.path.getsize(destination)} bytes)")
+        return destination
 
     def get_signed_url(self, bucket_name: str, file_path: str, expires_in_seconds: int = 3600) -> str:
         """Generates a secure, time-limited signed URL for private bucket objects."""

@@ -59,6 +59,7 @@ export const UploadPage: React.FC = () => {
   
   const [numClips, setNumClips] = useState<number>(3);
   const [language, setLanguage] = useState<'English' | 'Hindi' | 'Hinglish'>('English');
+  const [isWaking, setIsWaking] = useState(false);
 
   const validFormats = ['video/mp4', 'video/quicktime', 'video/webm'];
 
@@ -151,6 +152,20 @@ export const UploadPage: React.FC = () => {
     toast.info(`Loaded ${preset} studio preset`);
   };
 
+  /** Wake a sleeping free-tier backend before settling for demo clips: retry the
+   *  availability probe for up to ~75s (Render cold start), then give up gracefully. */
+  const wakeBackend = async (): Promise<boolean> => {
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const ok = await ensureBackendProbed(isBackendAvailable);
+      if (ok) return true;
+      if (attempt === 0) {
+        toast.info('Waking up the cloud engine — free-tier hosting can take up to a minute to boot once in a while', { duration: 12000 });
+      }
+      await new Promise(r => setTimeout(r, 6000));
+    }
+    return false;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -158,6 +173,20 @@ export const UploadPage: React.FC = () => {
       setFileError('Please select a video file, enter a YouTube URL, or load sample project data.');
       toast.error('Please provide a video file or title');
       return;
+    }
+
+    // Wake the backend BEFORE creating the local mirror + navigating, so the
+    // processing screen never settles for demo clips that a pending real
+    // pipeline would come back to replace.
+    setIsWaking(true);
+    let backendUp = false;
+    try {
+      backendUp = await wakeBackend();
+    } finally {
+      setIsWaking(false);
+    }
+    if (!backendUp) {
+      toast.warning('Cloud engine unreachable — continuing with local demo simulation');
     }
 
     const title = projectTitle.trim() || (selectedFile ? selectedFile.name : 'Untitled Creator Session');
@@ -185,8 +214,7 @@ export const UploadPage: React.FC = () => {
     // Navigate immediately — the processing page reconciles with the backend while it runs
     navigate(`/project/${newProjectId}/processing`);
 
-    // Full pipeline submission against the FastAPI backend when reachable
-    const backendUp = await ensureBackendProbed(isBackendAvailable);
+    // Full pipeline submission against the FastAPI backend (already confirmed awake)
     if (backendUp) {
       const platformLabel = platform === 'reels' ? 'Instagram Reels'
         : platform === 'shorts' ? 'YouTube Shorts'
@@ -653,13 +681,24 @@ export const UploadPage: React.FC = () => {
 
         {/* Submit Button */}
         <div className="flex items-center justify-end">
+          {isWaking && (
+            <span className="mr-3 text-xs font-mono text-cyan-400 animate-pulse flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+              Waking cloud engine…
+            </span>
+          )}
           <button
             type="submit"
-            className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-500 hover:to-violet-500 active:scale-[0.98] text-white font-bold text-sm shadow-[0_0_25px_rgba(99,102,241,0.5)] hover:shadow-[0_0_35px_rgba(99,102,241,0.7)] transition-all inline-flex items-center justify-center gap-2 group"
+            disabled={isWaking}
+            className={`w-full sm:w-auto px-8 py-3.5 rounded-xl text-white font-bold text-sm transition-all inline-flex items-center justify-center gap-2 group ${
+              isWaking
+                ? 'bg-surface-main border border-subtle cursor-wait text-sub'
+                : 'bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-500 hover:to-violet-500 active:scale-[0.98] shadow-[0_0_25px_rgba(99,102,241,0.5)] hover:shadow-[0_0_35px_rgba(99,102,241,0.7)]'
+            }`}
           >
             <Sparkles className="w-4 h-4 text-cyan-300 group-hover:rotate-12 transition-transform" />
-            <span>Start AI Analysis Pipeline</span>
-            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            <span>{isWaking ? 'Connecting to pipeline…' : 'Start AI Analysis Pipeline'}</span>
+            {!isWaking && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
           </button>
         </div>
 
