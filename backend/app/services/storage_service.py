@@ -45,13 +45,17 @@ class StorageService:
                 file=file_bytes,
                 file_options={"content-type": content_type, "upsert": "true"}
             )
-            
+
             # Get public or signed URL
             public_url = supabase_service.service_client.storage.from_(bucket_name).get_public_url(destination_path)
             return public_url
         except Exception as e:
-            logger.warning(f"Storage upload exception: {e}. Generating standardized storage path URL.")
-            return f"{settings.SUPABASE_URL}/storage/v1/object/public/{bucket_name}/{destination_path}"
+            logger.error(f"Storage upload FAILED for {bucket_name}/{destination_path}: {e}")
+            if settings.is_mock_mode:
+                return f"{settings.SUPABASE_URL}/storage/v1/object/public/{bucket_name}/{destination_path}"
+            # Never return a URL for a file that was not actually stored: downstream
+            # renders would 404/400 with an unexplainable error much later.
+            raise
 
     def download_source_video(self, source_url: str, filename: str) -> str:
         """

@@ -3,6 +3,8 @@ Rendered Reels API Routes.
 Manages Remotion rendering requests, status polling, MP4 video streaming/downloading,
 and project reel listings.
 """
+import logging
+from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.responses import RedirectResponse
@@ -12,7 +14,49 @@ from app.models.common_models import APIResponse
 from app.services.renderer_service import renderer_service
 from app.services.feedback_service import feedback_service
 
+logger = logging.getLogger("reelreason.reels")
+
 router = APIRouter(tags=["Reels"])
+
+ORPHAN_MINUTES = 15
+
+
+def reap_stuck_render(reel: dict, supabase) -> None:
+    """
+    Marks renders orphaned in 'processing' as failed so they can be retried.
+    The in-process FFmpeg render dies if the API worker restarts (free-tier deploys,
+    OOM kills) — without this the reel would spin as 'processing' forever.
+    Uses updated_at as the last authoritative lifecycle timestamp.
+    """
+    if reel.get("render_status") != "processing":
+        return
+    stamp = reel.get("updated_at") or reel.get("created_at")
+    if not stamp:
+        return
+    try:
+        ts = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        age_minutes = (datetime.now(timezone.utc) - ts).total_seconds() / 60.0
+    except ValueError:
+        return
+    if age_minutes < ORPHAN_MINUTES:
+        return
+
+    message = (
+        f"Render was interrupted by a server restart after {int(age_minutes)} minutes and cannot recover."
+        " Please trigger the render again."
+    )
+    logger.warning(f"Reel {reel.get('id')} orphaned in processing for {int(age_minutes)} min — marking failed")
+    supabase.service_client.table("rendered_reels").update({
+        "render_status": "failed",
+        "error_message": message,
+    }).eq("id", reel["id"]).execute()
+    supabase.service_client.table("clip_suggestions").update({
+        "status": "suggested"
+    }).eq("id", reel.get("clip_id")).execute()
+    reel["render_status"] = "failed"
+    reel["error_message"] = message
 
 
 @router.post("/api/clips/{clip_id}/render", response_model=APIResponse[RenderReelResponse], status_code=status.HTTP_202_ACCEPTED)
@@ -85,6 +129,16 @@ async def get_rendered_reel_status(
     reel = res.data[0]
     if reel.get("user_id") != current_user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    reap_stuck_render(reel, supabase)
+
+    # Self-healing: re-kick renders orphaned by a worker restart so status
+    # polling eventually reaches a terminal state instead of spinning forever.
+    if reel.get("render_status") in ("queued", "processing") and not reel.get("video_url"):
+        try:
+            await renderer_service.resume_or_redispatch(reel)
+        except Exception as e:
+            logger.warning(f"Render resume check failed for reel {reel.get('id')}: {e}")
 
     return APIResponse(data=RenderReelResponse(**reel))
 

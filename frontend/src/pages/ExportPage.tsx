@@ -42,6 +42,9 @@ export const ExportPage: React.FC = () => {
   const [copiedType, setCopiedType] = useState<string | null>(null);
 
   const activeClip = project?.clips.find(c => c.id === selectedClipId) || approvedClips[0] || project?.clips[0];
+  // Prefer the backend-rendered 9:16 reel MP4 when it exists; otherwise preview the raw source.
+  const renderedVideoUrl = activeClip?.renderedVideoUrl || null;
+  const previewVideoUrl = renderedVideoUrl || localBlob;
 
   if (!project) {
     return (
@@ -73,7 +76,30 @@ export const ExportPage: React.FC = () => {
     toast.success('Downloaded complete reel package (text & captions)');
   };
 
-  const handleDownloadMp4 = () => {
+  const handleDownloadMp4 = async () => {
+    // 1) Prefer the actual backend-rendered vertical reel
+    if (renderedVideoUrl) {
+      try {
+        const res = await fetch(renderedVideoUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = `${activeClip ? activeClip.title.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'reel'}_9x16.mp4`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+        toast.success('Downloaded the rendered 9:16 reel');
+      } catch {
+        // CORS or network hiccup — open the MP4 directly as a fallback
+        window.open(renderedVideoUrl, '_blank');
+        toast.info('Opened the rendered reel in a new tab — use your browser to save it');
+      }
+      return;
+    }
+    // 2) Fall back to the raw source asset attached in this session
     if (localBlob) {
       const link = document.createElement('a');
       link.href = localBlob;
@@ -81,9 +107,9 @@ export const ExportPage: React.FC = () => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success('Downloading local video asset');
+      toast.success('Downloading raw source footage (render first for the 9:16 reel)');
     } else {
-      toast.info('No raw video file attached in demo session. Download the SRT subtitles or metadata bundle.');
+      toast.info('No rendered reel yet — trigger a render to export the final 9:16 MP4.');
     }
   };
 
@@ -117,7 +143,7 @@ export const ExportPage: React.FC = () => {
             className="px-5 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-500 hover:to-violet-500 active:scale-[0.98] rounded-xl shadow-[0_0_20px_rgba(99,102,241,0.4)] hover:shadow-[0_0_25px_rgba(99,102,241,0.6)] transition-all flex items-center gap-1.5"
           >
             <Film className="w-3.5 h-3.5 text-cyan-300" />
-            <span>Simulate Render All ({approvedClips.length})</span>
+            <span>Render Reels ({approvedClips.length})</span>
           </button>
         </div>
       </div>
@@ -249,7 +275,7 @@ export const ExportPage: React.FC = () => {
                   onClick={() => simulateClipRender(project.id, activeClip.id)}
                   className="w-full py-2.5 rounded-xl bg-surface-sub hover:bg-surface-main border border-subtle text-xs font-semibold text-main transition-colors"
                 >
-                  Trigger Simulated Render
+                  Render 9:16 Reel
                 </button>
               )}
             </div>
@@ -268,7 +294,7 @@ export const ExportPage: React.FC = () => {
                 <div className="md:col-span-5">
                   <VideoReelPlayer
                     clip={activeClip}
-                    videoUrl={localBlob}
+                    videoUrl={previewVideoUrl}
                     backdropUrl={project.thumbnailUrl}
                     autoplay={false}
                   />
@@ -346,7 +372,7 @@ export const ExportPage: React.FC = () => {
                       className="w-full px-4 py-2.5 rounded-xl bg-surface-sub hover:bg-surface-main border border-subtle text-xs font-semibold text-muted hover:text-main transition-colors flex items-center justify-center gap-2"
                     >
                       <Film className="w-4 h-4" />
-                      <span>{localBlob ? 'Download Raw Video Asset (.MP4)' : 'Download Video (Attached Files Only)'}</span>
+                      <span>{renderedVideoUrl ? 'Download Rendered 9:16 Reel (.MP4)' : localBlob ? 'Download Raw Source (Render First for Final 9:16)' : 'Render to Export the Final MP4'}</span>
                     </button>
                   </div>
 

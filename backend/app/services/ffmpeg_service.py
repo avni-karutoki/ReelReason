@@ -108,7 +108,10 @@ class FFmpegService:
             raise FileNotFoundError("Could not find downloaded video file after yt-dlp execution.")
         except Exception as cli_err:
             logger.error(f"yt-dlp CLI failed: {cli_err}")
-            # If in development or mock mode, fall back to mock video path rather than halting
+            # In real mode a failed download must fail loudly: fabricating a mock
+            # file would silently poison extraction, transcription, and clips.
+            if not settings.is_mock_mode:
+                raise RuntimeError(f"yt-dlp download failed: {cli_err}")
             mock_video_path = os.path.join(target_dir, "sample_podcast.mp4")
             with open(mock_video_path, "wb") as f:
                 f.write(b"MOCK_FALLBACK_VIDEO_REELREASON")

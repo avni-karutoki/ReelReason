@@ -30,7 +30,7 @@ import { formatSecondsToTime } from '../utils/time';
 import { ReasoningDrawer } from '../components/common/ReasoningDrawer';
 import { VideoReelPlayer } from '../components/common/VideoReelPlayer';
 import { StaggerGroup, StaggerItem } from '../components/common/Reveal';
-import { isBackendAvailable, listProjectClips } from '../api/client';
+import { isBackendAvailable, listProjectClips, listProjectReels } from '../api/client';
 import { ensureBackendProbed } from '../api/realMode';
 import { backendClipToFrontend } from '../api/adapters';
 import { toast } from 'sonner';
@@ -38,7 +38,7 @@ import { toast } from 'sonner';
 export const ClipDashboardPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { getProject, setClipApproval, simulateClipRender, getVideoBlobUrl, updateProject } = useProjects();
+  const { getProject, setClipApproval, simulateClipRender, getVideoBlobUrl, updateProject, updateClip } = useProjects();
 
   const project = getProject(id || '');
 
@@ -65,6 +65,32 @@ export const ClipDashboardPage: React.FC = () => {
     })();
     return () => { cancelled = true; };
   }, [project?.id, project?.clips.length]);
+
+  // Attach already-rendered reel MP4s from the backend so the real 9:16 videos
+  // survive page reloads and other devices (rendered_reels table is the source).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!project || !/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(project.id)) return;
+      const up = await ensureBackendProbed(isBackendAvailable);
+      if (!up || cancelled) return;
+      try {
+        const reels = await listProjectReels(project.id);
+        if (cancelled) return;
+        reels.forEach(r => {
+          if (!r.clip_id || !r.video_url) return;
+          updateClip(project.id, r.clip_id, {
+            renderedVideoUrl: r.video_url || undefined,
+            renderStatus: r.render_status === 'completed' ? 'ready' : r.render_status === 'processing' ? 'rendering' : 'pending',
+            renderProgress: r.render_status === 'completed' ? 100 : r.render_status === 'processing' ? 60 : 0,
+          });
+        });
+      } catch (e) {
+        console.warn('Could not hydrate rendered reels:', (e as Error)?.message || e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [project?.id]);
 
   // Filter & Sort State
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -544,7 +570,7 @@ export const ClipDashboardPage: React.FC = () => {
 
             <VideoReelPlayer
               clip={previewModalClip}
-              videoUrl={localBlob}
+              videoUrl={previewModalClip.renderedVideoUrl || localBlob}
               backdropUrl={project.thumbnailUrl}
               autoplay={true}
             />

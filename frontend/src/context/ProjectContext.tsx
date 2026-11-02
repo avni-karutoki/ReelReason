@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { toast } from 'sonner';
 import { Project, Clip, UserSettings, ApprovalStatus, ClipCategory } from '../types';
 import { mockProjects, defaultUserSettings, HERO_PODCAST_IMG } from '../data/mockData';
 import * as api from '../api/client';
@@ -451,9 +452,12 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         let attempts = 0;
         const poll = setInterval(async () => {
           attempts += 1;
-          if (attempts > 30) {
+          if (attempts > 240) {
+            // Server render is taking unusually long — stop polling but stay honest:
+            // the reel hydration effect will attach the real MP4 when it lands.
             clearInterval(poll);
-            updateClip(projectId, clipId, { renderStatus: 'ready', renderProgress: 100 });
+            toast.info('Render is still running on the server — reopen this project in a minute to see the finished reel');
+            updateClip(projectId, clipId, { renderStatus: 'pending', renderProgress: 0 });
             return;
           }
           try {
@@ -464,6 +468,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             } else if (reel.render_status === 'failed') {
               clearInterval(poll);
               console.warn('Render failed on backend:', reel.error_message);
+              toast.error(`Reel render failed on the server: ${reel.error_message || 'unknown error'} — the clip reverts to raw-footage preview`);
               updateClip(projectId, clipId, { renderStatus: 'pending', renderProgress: 0 });
             } else {
               updateClip(projectId, clipId, {

@@ -294,6 +294,10 @@ export async function getRenderStatus(reelId: string): Promise<BackendReel> {
   return apiFetch<BackendReel>(`/api/reels/${reelId}`, { method: 'GET' });
 }
 
+export async function listProjectReels(projectId: string): Promise<BackendReel[]> {
+  return apiFetch<BackendReel[]>(`/api/projects/${projectId}/reels`, { method: 'GET' });
+}
+
 export interface BackendUser {
   id: string;
   email: string | null;

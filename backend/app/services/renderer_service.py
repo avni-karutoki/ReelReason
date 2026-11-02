@@ -11,7 +11,7 @@ import asyncio
 import logging
 import httpx
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from app.config import settings
 from app.models.reel_models import RemotionRenderJobPayload, SubtitleStyle
 from app.services.supabase_service import supabase_service
@@ -38,6 +38,12 @@ logger = logging.getLogger("reelreason.renderer")
 
 
 class RendererService:
+    def __init__(self):
+        # Reel renders currently executing inside this API process. Survives
+        # restarts poorly — the resume bootstrap in the polling routes uses this
+        # to distinguish "still running here" vs "orphaned by a worker restart".
+        self._active_reel_ids: set = set()
+
     async def dispatch_render_job(
         self,
         clip: Dict[str, Any],
@@ -144,6 +150,7 @@ class RendererService:
         processing -> completed/failed as the task finishes.
         """
         record["render_status"] = "processing"
+        self._active_reel_ids.add(record["id"])
         supabase_service.service_client.table("rendered_reels").update({
             "render_status": "processing"
         }).eq("id", record["id"]).execute()
@@ -172,6 +179,11 @@ class RendererService:
                     video_url = payload.video_url
                     with httpx.Client(timeout=None, follow_redirects=True) as client:
                         with client.stream("GET", video_url) as resp:
+                            if resp.status_code >= 400:
+                                raise RuntimeError(
+                                    f"Source video is not accessible ({resp.status_code}) at storage URL: {video_url}."
+                                    " The original upload may have failed — retry the analysis to re-store the video."
+                                )
                             resp.raise_for_status()
                             tmp_download = source_path + ".part"
                             with open(tmp_download, "wb") as f:
@@ -245,6 +257,64 @@ class RendererService:
             supabase_service.service_client.table("clip_suggestions").update({
                 "status": "suggested"
             }).eq("id", clip_id).execute()
+        finally:
+            self._active_reel_ids.discard(reel_id)
+
+    async def resume_or_redispatch(self, reel: Dict[str, Any]) -> None:
+        """
+        Re-kicks a render that has no video_url and is not running in this process
+        (e.g. the API worker restart killed the in-memory FFmpeg task). Only fires
+        after a grace period so a genuinely-slow-but-running render is not duplicated.
+        """
+        reel_id = reel["id"]
+        if reel_id in self._active_reel_ids:
+            return
+        if reel.get("video_url"):
+            return
+
+        # Grace period based on the row's updated_at
+        stamp = reel.get("updated_at") or reel.get("created_at")
+        if stamp:
+            try:
+                ts = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                if (datetime.now(timezone.utc) - ts).total_seconds() < 120:
+                    return
+            except ValueError:
+                pass
+
+        clip_res = supabase_service.service_client.table("clip_suggestions").select("*").eq("id", reel["clip_id"]).execute()
+        project_res = supabase_service.service_client.table("video_projects").select("*").eq("id", reel["project_id"]).execute()
+        if not clip_res.data or not project_res.data:
+            return
+        clip = clip_res.data[0]
+        project = project_res.data[0]
+
+        t_res = supabase_service.service_client.table("transcripts").select("word_timestamps").eq(
+            "project_id", reel["project_id"]).order("created_at", desc=True).execute()
+        word_timestamps = t_res.data[0].get("word_timestamps", []) if t_res.data else []
+
+        start_time_str = format_seconds_to_timestamp(clip.get("start_time", 0.0))
+        end_time_str = format_seconds_to_timestamp(clip.get("end_time", 30.0))
+        payload = RemotionRenderJobPayload(
+            render_job_id=reel.get("renderer_job_id") or f"render_{uuid.uuid4().hex[:10]}",
+            clip_id=reel["clip_id"],
+            project_id=reel["project_id"],
+            video_url=project.get("video_path") or f"{settings.SUPABASE_URL}/storage/v1/object/public/reelreason-videos/{reel['project_id']}.mp4",
+            start_time=start_time_str,
+            end_time=end_time_str,
+            aspect_ratio="9:16",
+            hook=clip.get("hook", "Key insight from this video"),
+            title=clip.get("title", "ReelReason Selection"),
+            caption=clip.get("caption", ""),
+            hashtags=clip.get("hashtags", []),
+            creator_handle="@reelreason",
+            subtitle_style=SubtitleStyle(**(clip.get("subtitle_style") or {})),
+            word_timestamps=word_timestamps or [],
+        )
+        logger.warning(f"Reel {reel_id} appears orphaned — re-kicking local render for clip {reel['clip_id']}")
+        self._start_local_render(payload, dict(reel), clip, word_timestamps)
 
     def _chunk_words(self, word_timestamps: List[dict], start_sec: float, end_sec: float):
         """
