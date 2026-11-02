@@ -139,6 +139,17 @@ async def get_rendered_reel_status(
             await renderer_service.resume_or_redispatch(reel)
         except Exception as e:
             logger.warning(f"Render resume check failed for reel {reel.get('id')}: {e}")
+    elif (
+        reel.get("render_status") == "failed"
+        and "interrupted by a server restart" in str(reel.get("error_message") or "")
+    ):
+        # The watchdog just reaped an orphan — retry it once automatically so the
+        # creator gets their reel without a manual re-click.
+        reel["render_status"] = "processing"
+        try:
+            await renderer_service.resume_or_redispatch(reel)
+        except Exception as e:
+            logger.warning(f"Auto-retry after reaping failed for reel {reel.get('id')}: {e}")
 
     return APIResponse(data=RenderReelResponse(**reel))
 

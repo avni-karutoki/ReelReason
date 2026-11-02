@@ -158,6 +158,7 @@ def render_vertical_reel_with_subtitles(
     duration = max(0.1, end_seconds - start_seconds)
 
     filters = ["crop=ih*9/16:ih", "scale=720:1280", "setsar=1"]
+
     if ass_path and os.path.exists(ass_path):
         # Use the subtitle file's bare filename with ffmpeg's cwd set to its folder,
         # avoiding Windows drive-letter escaping issues in the filter argument.
@@ -171,8 +172,8 @@ def render_vertical_reel_with_subtitles(
         "-t", str(duration),
         "-vf", ",".join(filters),
         "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "23",
+        "-preset", "ultrafast",
+        "-crf", "26",
         "-c:a", "aac",
         "-b:a", "128k",
         "-movflags", "+faststart",
