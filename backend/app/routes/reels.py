@@ -194,7 +194,19 @@ async def list_project_rendered_reels(
     current_user: dict = Depends(get_current_user),
     supabase = Depends(get_supabase)
 ):
-    """Returns all rendered reels belonging to a specific video project."""
+    """Returns all rendered reels belonging to a specific video project.
+
+    Also runs the stuck-render watchdog + auto-retry per reel, so a visit to
+    the dashboard/Export page self-heals renders orphaned by a worker restart.
+    """
     res = supabase.service_client.table("rendered_reels").select("*").eq("project_id", project_id).eq("user_id", current_user["id"]).execute()
-    reels = [RenderReelResponse(**r) for r in res.data or []]
-    return APIResponse(data=reels)
+    reels = res.data or []
+    for reel in reels:
+        try:
+            reap_stuck_render(reel, supabase)
+            if reel.get("render_status") == "failed" and "interrupted by a server restart" in str(reel.get("error_message") or ""):
+                reel["render_status"] = "processing"
+                await renderer_service.resume_or_redispatch(reel)
+        except Exception as e:
+            logger.warning(f"Self-heal check failed for reel {reel.get('id')}: {e}")
+    return APIResponse(data=[RenderReelResponse(**r) for r in reels])
