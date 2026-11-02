@@ -31,7 +31,7 @@ import { ReasoningDrawer } from '../components/common/ReasoningDrawer';
 import { VideoReelPlayer } from '../components/common/VideoReelPlayer';
 import { StaggerGroup, StaggerItem } from '../components/common/Reveal';
 import { isBackendAvailable, listProjectClips, listProjectReels } from '../api/client';
-import { ensureBackendProbed } from '../api/realMode';
+import { ensureBackendProbed, getBackendProjectId } from '../api/realMode';
 import { backendClipToFrontend } from '../api/adapters';
 import { toast } from 'sonner';
 
@@ -41,18 +41,20 @@ export const ClipDashboardPage: React.FC = () => {
   const { getProject, setClipApproval, simulateClipRender, getVideoBlobUrl, updateProject, updateClip } = useProjects();
 
   const project = getProject(id || '');
+  // Locally created projects use a client ID and are mapped to a backend UUID
+  // after upload. Always resolve that mapping before deciding whether to hydrate.
+  const backendProjectId = project ? getBackendProjectId(project.id) : undefined;
 
   // If this project lives on the backend but clips haven't been mirrored locally
   // yet (e.g. opened directly from another device), hydrate them from the API.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!project || project.clips.length > 0) return;
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(project.id)) return;
+      if (!project || project.clips.length > 0 || !backendProjectId) return;
       const up = await ensureBackendProbed(isBackendAvailable);
       if (!up || cancelled) return;
       try {
-        const backendClips = await listProjectClips(project.id, { sortBy: 'score' });
+        const backendClips = await listProjectClips(backendProjectId, { sortBy: 'score' });
         if (cancelled || backendClips.length === 0) return;
         const projectTitle = project.title || 'Studio Video';
         updateProject(project.id, {
@@ -64,18 +66,18 @@ export const ClipDashboardPage: React.FC = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, [project?.id, project?.clips.length]);
+  }, [project?.id, project?.clips.length, backendProjectId]);
 
   // Attach already-rendered reel MP4s from the backend so the real 9:16 videos
   // survive page reloads and other devices (rendered_reels table is the source).
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!project || !/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(project.id)) return;
+      if (!project || !backendProjectId) return;
       const up = await ensureBackendProbed(isBackendAvailable);
       if (!up || cancelled) return;
       try {
-        const reels = await listProjectReels(project.id);
+        const reels = await listProjectReels(backendProjectId);
         if (cancelled) return;
         reels.forEach(r => {
           if (!r.clip_id || !r.video_url) return;
@@ -90,7 +92,7 @@ export const ClipDashboardPage: React.FC = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, [project?.id]);
+  }, [project?.id, backendProjectId]);
 
   // Filter & Sort State
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
