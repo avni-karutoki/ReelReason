@@ -268,9 +268,9 @@ class RendererService:
         """
         reel_id = reel["id"]
         if reel_id in self._active_reel_ids:
-            return
+            return False
         if reel.get("video_url"):
-            return
+            return False
 
         # Grace period based on the row's updated_at
         stamp = reel.get("updated_at") or reel.get("created_at")
@@ -287,7 +287,8 @@ class RendererService:
         clip_res = supabase_service.service_client.table("clip_suggestions").select("*").eq("id", reel["clip_id"]).execute()
         project_res = supabase_service.service_client.table("video_projects").select("*").eq("id", reel["project_id"]).execute()
         if not clip_res.data or not project_res.data:
-            return
+            logger.warning(f"Reel {reel_id} resume skipped: clip/project row missing")
+            return False
         clip = clip_res.data[0]
         project = project_res.data[0]
 
@@ -314,7 +315,8 @@ class RendererService:
             word_timestamps=word_timestamps or [],
         )
         logger.warning(f"Reel {reel_id} appears orphaned — re-kicking local render for clip {reel['clip_id']}")
-        self._start_local_render(payload, dict(reel), clip, word_timestamps)
+        await self._start_local_render(payload, dict(reel), clip, word_timestamps)
+        return True
 
     def _chunk_words(self, word_timestamps: List[dict], start_sec: float, end_sec: float):
         """
