@@ -94,7 +94,7 @@ class FFmpegService:
         try:
             import yt_dlp
             last_error: Optional[Exception] = None
-            for clients in (None, ["ios", "tv", "web_safari"], ["android"]):
+            for clients in (None, ["ios", "tv", "web_safari"], ["android"], ["web_embedded", "tv_embedded"]):
                 ydl_opts = dict(_ydl_base_opts)
                 if clients:
                     ydl_opts["extractor_args"] = {"youtube": {"player_client": clients}}
