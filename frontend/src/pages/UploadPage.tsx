@@ -22,6 +22,7 @@ import {
   Linkedin
 } from 'lucide-react';
 import { useProjects } from '../context/ProjectContext';
+import { useAuth } from '../context/AuthContext';
 import { isBackendAvailable, createProject as registerProjectWithBackend } from '../api/client';
 import { ensureBackendProbed, registerRealProject } from '../api/realMode';
 import { VideoType, TargetPlatform, ClipCategory } from '../types';
@@ -31,6 +32,7 @@ import { toast } from 'sonner';
 export const UploadPage: React.FC = () => {
   const navigate = useNavigate();
   const { createProject, userSettings } = useProjects();
+  const { openAuthModal } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Form State
@@ -205,8 +207,20 @@ export const UploadPage: React.FC = () => {
         registerRealProject(newProjectId, backendProject.id);
         toast.success('Project submitted to the processing pipeline');
       } catch (err) {
-        console.warn('Backend submission failed — running local analysis:', (err as Error)?.message || err);
-        toast.warning('Backend unreachable — continuing with local preview');
+        const message = (err as Error)?.message || '';
+        console.warn('Backend submission failed — running local analysis:', message || err);
+        if (message.includes('401')) {
+          // Backend answered but this visitor is not signed in — guide them to auth.
+          toast.warning('Sign in to unlock real cloud processing — running local preview for now', {
+            description: 'Your project and clips still work in this browser session.',
+            action: {
+              label: 'Sign In',
+              onClick: () => openAuthModal('signup'),
+            },
+          });
+        } else {
+          toast.warning('Backend unreachable — continuing with local preview');
+        }
       }
     }
   };

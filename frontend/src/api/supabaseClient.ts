@@ -5,8 +5,19 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+/**
+ * Production defaults for the ReelReason Supabase project.
+ * The anon key is a "publishable" key — designed to be shipped in browsers
+ * (row-level security on the project protects the data). Vercel env vars
+ * (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY) always take precedence.
+ */
+const PROD_SUPABASE_URL = 'https://gatooewjduzykzxistyw.supabase.co';
+const PROD_SUPABASE_ANON_KEY = 'sb_publishable_WSW2tDulEJe04Wld6w5MPw_GCGsiFjl';
+
+const SUPABASE_URL =
+  (import.meta.env.VITE_SUPABASE_URL as string | undefined) || PROD_SUPABASE_URL;
+const SUPABASE_ANON_KEY =
+  (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || PROD_SUPABASE_ANON_KEY;
 
 const isConfigured = Boolean(
   SUPABASE_URL &&
