@@ -71,15 +71,16 @@ class ClipAnalysisService:
             elif settings.AI_PROVIDER.lower() == "openai" and settings.OPENAI_API_KEY:
                 raw_json = await self._call_openai(prompt)
             else:
-                logger.info("No live AI API key configured or fallback triggered; using demo analysis engine.")
-                return self._generate_mock_clips(number_of_clips, platform, audience, goal, tone)
+                raise RuntimeError(f"Live AI provider '{settings.AI_PROVIDER}' is missing its API key")
 
             parsed = extract_and_parse_json(raw_json)
             clips = parsed.get("clips", [])
+            if not clips:
+                raise RuntimeError("AI analysis returned no clips for the video transcript")
             return clips
         except Exception as e:
-            logger.error(f"LLM analysis invocation error: {e}. Falling back to deterministic demo clips.")
-            return self._generate_mock_clips(number_of_clips, platform, audience, goal, tone)
+            logger.exception("LLM clip analysis failed; refusing to substitute unrelated demo clips")
+            raise RuntimeError(f"Video-specific clip analysis failed: {e}") from e
 
     _PLACEHOLDER_RE = re.compile(r"\{([a-z_][a-z_0-9]*)\}")
 

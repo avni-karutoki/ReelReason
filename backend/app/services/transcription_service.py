@@ -447,12 +447,9 @@ def get_transcription_provider_name() -> str:
     configured = settings.TRANSCRIPTION_PROVIDER.strip().lower()
     if settings.is_mock_mode:
         return "mock"
-    if (
-        configured == "mock"
-        and settings.ENVIRONMENT.lower() == "production"
-        and settings.AI_PROVIDER.lower() == "gemini"
-    ):
-        return "gemini"
+    if configured == "mock" and settings.AI_PROVIDER.lower() in {"gemini", "openai"}:
+        # A live analysis provider must never receive the canned demo transcript.
+        return settings.AI_PROVIDER.lower()
     return configured
 
 

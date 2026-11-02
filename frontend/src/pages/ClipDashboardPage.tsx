@@ -532,14 +532,14 @@ export const ClipDashboardPage: React.FC = () => {
       {filteredAndSortedClips.length === 0 && (
         <div className="p-12 text-center rounded-2xl bg-surface-main border border-subtle space-y-3">
           <Info className="w-8 h-8 text-sub mx-auto" />
-          <h3 className="text-base font-bold text-main font-sans">No clips match your current filter</h3>
-          <p className="text-xs text-sub">Try changing category or status filters to view other recommendations.</p>
-          <button
+          <h3 className="text-base font-bold text-main font-sans">{clips.length ? 'No clips match your current filter' : 'No video analysis results yet'}</h3>
+          <p className="text-xs text-sub">{clips.length ? 'Try changing category or status filters to view other recommendations.' : 'Video specific clips appear here after the cloud analysis engine transcribes and analyzes this video. Check that the backend and AI provider are configured, then submit the video again.'}</p>
+          {clips.length > 0 && <button
             onClick={() => { setSelectedCategory('all'); setSelectedStatus('all'); }}
             className="px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-violet-600 rounded-xl shadow-md"
           >
             Reset Filters
-          </button>
+          </button>}
         </div>
       )}
 

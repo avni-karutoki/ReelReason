@@ -190,7 +190,10 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       ? params.clipTypes
       : ['Strong Opinion', 'Practical Lesson', 'Unexpected Story'] as ClipCategory[];
 
-    const numClips = params.numClipsRequested || 3;
+    // New uploads must only show clips returned by analysis of this video.
+    // The former local templates looked like real results even when the API
+    // was offline, so keep the requested count but don't fabricate clips.
+    const numClips = 0;
     const createdClips: Clip[] = [];
 
     const hookTemplates: Record<string, string[]> = {
@@ -317,7 +320,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       targetAudience: params.targetAudience || 'General creator audience',
       tone: params.tone || 'Thoughtful & Analytical',
       clipTypes: clipTypesRequested,
-      numClipsRequested: numClips,
+      numClipsRequested: params.numClipsRequested || 3,
       language: params.language || 'English',
       clips: createdClips,
       exportCount: 0
